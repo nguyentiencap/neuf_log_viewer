@@ -375,6 +375,137 @@ runTest('formatLogEntry: Minimal log object', () => {
 });
 
 // ============================================================================
+// Test parsePhase1Line
+// ============================================================================
+printSection('Testing parsePhase1Line()');
+
+runTest('parsePhase1Line: Valid log line returns timestamp and rawContent', () => {
+  const line = '2026.04.08 14:30:45.123 [INFO] Thread-1: <Device> (com.example.Class) Test message';
+  const result = parser.parsePhase1Line(line);
+  return assertEqual(result, {
+    timestamp: '2026.04.08 14:30:45.123',
+    rawContent: '[INFO] Thread-1: <Device> (com.example.Class) Test message'
+  }, 'Should extract timestamp and rawContent from valid log line');
+});
+
+runTest('parsePhase1Line: Continuation line returns null', () => {
+  const line = '  at com.example.Class.method(Class.java:42)';
+  const result = parser.parsePhase1Line(line);
+  return assertEqual(result, null, 'Should return null for continuation/stacktrace line');
+});
+
+runTest('parsePhase1Line: Empty line returns null', () => {
+  const result = parser.parsePhase1Line('');
+  return assertEqual(result, null, 'Should return null for empty line');
+});
+
+runTest('parsePhase1Line: Plain text without timestamp returns null', () => {
+  const result = parser.parsePhase1Line('Some random text without timestamp');
+  return assertEqual(result, null, 'Should return null for text without timestamp');
+});
+
+runTest('parsePhase1Line: Minimal log line (timestamp + level + thread + message)', () => {
+  const line = '2026.04.08 14:30:45.123 [WARN] main: Something happened';
+  const result = parser.parsePhase1Line(line);
+  return assertEqual(result, {
+    timestamp: '2026.04.08 14:30:45.123',
+    rawContent: '[WARN] main: Something happened'
+  }, 'Should parse minimal log line');
+});
+
+// ============================================================================
+// Test parsePhase2Entry
+// ============================================================================
+printSection('Testing parsePhase2Entry()');
+
+runTest('parsePhase2Entry: Full entry with all fields', () => {
+  const rawEntry = {
+    filename: 'NEUF-test.log',
+    timestamp: '2026.04.08 14:30:45.123',
+    rawContent: '[INFO] class com.example.MyClass: Thread-1: <Device123> (com.example.package.Component) Test message'
+  };
+  const result = parser.parsePhase2Entry(rawEntry);
+  return assertEqual(result, {
+    filename: 'NEUF-test.log',
+    timestamp: '2026.04.08 14:30:45.123',
+    logLevel: 'INFO',
+    threadName: 'Thread',
+    deviceId: 'Device123',
+    componentName: 'com.example.package',
+    message: 'Test message'
+  }, 'Should parse full entry with all fields (threadName normalized)');
+});
+
+runTest('parsePhase2Entry: Entry without class name', () => {
+  const rawEntry = {
+    filename: 'NEUF-test.log',
+    timestamp: '2026.04.08 14:30:45.123',
+    rawContent: '[INFO] Thread-1: <Device123> (com.example.Component) Test message'
+  };
+  const result = parser.parsePhase2Entry(rawEntry);
+  return assertEqual(result, {
+    filename: 'NEUF-test.log',
+    timestamp: '2026.04.08 14:30:45.123',
+    logLevel: 'INFO',
+    threadName: 'Thread',
+    deviceId: 'Device123',
+    componentName: 'com.example',
+    message: 'Test message'
+  }, 'Should parse entry without class name (threadName normalized)');
+});
+
+runTest('parsePhase2Entry: Entry without deviceId and componentName', () => {
+  const rawEntry = {
+    filename: 'NEUF-test.log',
+    timestamp: '2026.04.08 14:30:45.123',
+    rawContent: '[WARN] MainThread: Simple warning'
+  };
+  const result = parser.parsePhase2Entry(rawEntry);
+  return assertEqual(result, {
+    filename: 'NEUF-test.log',
+    timestamp: '2026.04.08 14:30:45.123',
+    logLevel: 'WARN',
+    threadName: 'MainThread',
+    deviceId: null,
+    componentName: null,
+    message: 'Simple warning'
+  }, 'Should handle entry without optional fields');
+});
+
+runTest('parsePhase2Entry: Multi-line entry preserves continuation lines in message', () => {
+  const rawEntry = {
+    filename: 'NEUF-test.log',
+    timestamp: '2026.04.08 14:30:45.123',
+    rawContent: '[ERROR] Thread-1: Exception occurred\n  at com.example.Class.method(Class.java:42)\n  at com.example.Main.run(Main.java:10)'
+  };
+  const result = parser.parsePhase2Entry(rawEntry);
+  const expectedMessage = 'Exception occurred\n  at com.example.Class.method(Class.java:42)\n  at com.example.Main.run(Main.java:10)';
+  return assertEqual(result && result.message, expectedMessage,
+    'Should preserve continuation lines as part of the message');
+});
+
+runTest('parsePhase2Entry: Invalid rawContent (no log level) returns null', () => {
+  const rawEntry = {
+    filename: 'NEUF-test.log',
+    timestamp: '2026.04.08 14:30:45.123',
+    rawContent: 'This is not a valid log entry'
+  };
+  const result = parser.parsePhase2Entry(rawEntry);
+  return assertEqual(result, null, 'Should return null for invalid rawContent');
+});
+
+runTest('parsePhase2Entry: Thread name is normalized (removes trailing number)', () => {
+  const rawEntry = {
+    filename: 'NEUF-test.log',
+    timestamp: '2026.04.08 14:30:45.123',
+    rawContent: '[INFO] Worker-Thread-42: Task completed'
+  };
+  const result = parser.parsePhase2Entry(rawEntry);
+  return assertEqual(result && result.threadName, 'Worker-Thread',
+    'Thread name should have trailing number removed');
+});
+
+// ============================================================================
 // Summary
 // ============================================================================
 printSummary('LOG PARSER TEST SUITE');
