@@ -145,7 +145,7 @@
     // Update subtitle showing step count
     const stepCount = state.pipelineSteps.length;
     if (stepCount > 0) {
-      $('#pipelineSubtitle').text('Step ' + (stepCount + 1) + ' — ' + stepCount + ' step' + (stepCount > 1 ? 's' : '') + ' applied');
+      $('#pipelineSubtitle').html('Step ' + (stepCount + 1) + ' &mdash; ' + stepCount + ' step' + (stepCount > 1 ? 's' : '') + ' applied');
     } else {
       $('#pipelineSubtitle').text('Click a suggestion to apply it');
     }
@@ -166,12 +166,8 @@
     Object.keys(sf).forEach(function(key) {
       const existing = state.filters[key] || [];
       const incoming = sf[key] || [];
-      // Merge without duplicates
-      const merged = existing.slice();
-      incoming.forEach(function(v) {
-        if (merged.indexOf(v) === -1) merged.push(v);
-      });
-      state.filters[key] = merged;
+      // Merge without duplicates using Set for O(n) performance
+      state.filters[key] = Array.from(new Set(existing.concat(incoming)));
     });
 
     // Reflect the merged filters back into the UI checkboxes

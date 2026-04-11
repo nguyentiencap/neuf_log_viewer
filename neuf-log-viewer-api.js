@@ -238,7 +238,7 @@ app.post('/pipeline_suggestions', async (req, res) => {
   try {
     const { filters = {} } = req.body;
 
-    // Parse and normalise filters (API layer responsibility)
+    // Parse and normalize filters (API layer responsibility)
     const parsedFilters = parseFiltersFromRequest(filters);
 
     // Fetch filter options with no result-set limit so suggestions are accurate
