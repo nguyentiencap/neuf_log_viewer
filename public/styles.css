@@ -492,6 +492,69 @@ body {
   margin-left: 5px;
 }
 
+/* Pipeline Suggestions */
+.pipeline-group {
+  background: #f0f7ff;
+  padding: 10px;
+  border-radius: 4px;
+  margin-bottom: 15px;
+  border: 1px solid #b8daff;
+}
+
+.pipeline-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  font-weight: bold;
+  color: #004085;
+  font-size: 12px;
+}
+
+.pipeline-subtitle {
+  font-weight: normal;
+  font-size: 11px;
+  color: #6c757d;
+}
+
+.pipeline-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pipeline-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  padding: 7px 10px;
+  background: #fff;
+  border: 1px solid #b8daff;
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s, border-color 0.15s;
+  font-family: inherit;
+}
+
+.pipeline-btn:hover {
+  background: #cce5ff;
+  border-color: #80bdff;
+}
+
+.pipeline-btn-label {
+  font-size: 12px;
+  font-weight: bold;
+  color: #004085;
+}
+
+.pipeline-btn-desc {
+  font-size: 11px;
+  color: #6c757d;
+  margin-top: 2px;
+}
+
 /* Scrollbar Styling */
 ::-webkit-scrollbar {
   width: 10px;

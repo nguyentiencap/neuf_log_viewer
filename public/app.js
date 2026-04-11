@@ -15,7 +15,8 @@
     folderPath: './logs',
     filters: {},
     filterOptions: {},
-    presets: []
+    presets: [],
+    pipelineSteps: []   // history of applied pipeline suggestions
   };
 
   // API base URL
@@ -86,12 +87,135 @@
           state.filterOptions = response.data;
           state.presets = response.data.presets || [];
           renderFilterOptions();
+          loadPipelineSuggestions();
         }
       },
       error: function(xhr) {
         const error = xhr.responseJSON ? xhr.responseJSON.error : 'Unknown error';
         showStatus('❌ Failed to load filter options: ' + error, 'error');
       }
+    });
+  }
+
+  /**
+   * Load pipeline suggestions based on current filters
+   */
+  function loadPipelineSuggestions() {
+    $.ajax({
+      url: API_BASE + '/pipeline_suggestions',
+      method: 'POST',
+      contentType: 'application/json',
+      data: JSON.stringify({ filters: state.filters }),
+      success: function(response) {
+        if (response.success) {
+          renderPipelineSuggestions(response.suggestions || []);
+        }
+      },
+      error: function() {
+        // Silently hide suggestions panel on error
+        $('#pipelineGroup').hide();
+      }
+    });
+  }
+
+  /**
+   * Render pipeline suggestions as clickable links
+   * @param {Array} suggestions - List of suggestion objects
+   */
+  function renderPipelineSuggestions(suggestions) {
+    const container = $('#pipelineSuggestions');
+    container.empty();
+
+    if (!suggestions || suggestions.length === 0) {
+      $('#pipelineGroup').hide();
+      return;
+    }
+
+    suggestions.forEach(function(suggestion) {
+      const btn = $('<button class="pipeline-btn" type="button"></button>');
+      btn.attr('title', suggestion.description);
+      btn.html('<span class="pipeline-btn-label">' + escapeHtml(suggestion.label) + '</span>' +
+               '<span class="pipeline-btn-desc">' + escapeHtml(suggestion.description) + '</span>');
+      btn.on('click', function() {
+        applyPipelineSuggestion(suggestion);
+      });
+      container.append(btn);
+    });
+
+    // Update subtitle showing step count
+    const stepCount = state.pipelineSteps.length;
+    if (stepCount > 0) {
+      $('#pipelineSubtitle').text('Step ' + (stepCount + 1) + ' — ' + stepCount + ' step' + (stepCount > 1 ? 's' : '') + ' applied');
+    } else {
+      $('#pipelineSubtitle').text('Click a suggestion to apply it');
+    }
+
+    $('#pipelineGroup').show();
+  }
+
+  /**
+   * Apply a pipeline suggestion by merging its filters with current filters
+   * @param {Object} suggestion - Suggestion object with filters to apply
+   */
+  function applyPipelineSuggestion(suggestion) {
+    // Record this step in pipeline history
+    state.pipelineSteps.push({ id: suggestion.id, label: suggestion.label });
+
+    // Merge suggestion filters into current state filters
+    const sf = suggestion.filters || {};
+    Object.keys(sf).forEach(function(key) {
+      const existing = state.filters[key] || [];
+      const incoming = sf[key] || [];
+      // Merge without duplicates
+      const merged = existing.slice();
+      incoming.forEach(function(v) {
+        if (merged.indexOf(v) === -1) merged.push(v);
+      });
+      state.filters[key] = merged;
+    });
+
+    // Reflect the merged filters back into the UI checkboxes
+    syncFiltersToUI(suggestion.filters);
+
+    // Reset to page 1 and reload
+    state.currentPage = 1;
+    loadLogs();
+    loadFilterOptions();
+  }
+
+  /**
+   * Sync a filters object back into the checkbox UI.
+   * Used after programmatically applying a pipeline suggestion.
+   * @param {Object} filters - Filters to reflect in the UI
+   */
+  function syncFiltersToUI(filters) {
+    if (!filters) return;
+
+    const fieldMap = {
+      logLevelInclude: '.logLevelInclude-checkbox',
+      logLevelExclude: '.logLevelExclude-checkbox',
+      threadInclude: '.threadInclude-checkbox',
+      threadExclude: '.threadExclude-checkbox',
+      componentInclude: '.componentInclude-checkbox',
+      componentExclude: '.componentExclude-checkbox',
+      deviceInclude: '.deviceInclude-checkbox',
+      deviceExclude: '.deviceExclude-checkbox',
+      filenameInclude: '.filenameInclude-checkbox',
+      filenameExclude: '.filenameExclude-checkbox'
+    };
+
+    Object.keys(fieldMap).forEach(function(field) {
+      if (!filters[field]) return;
+      const selector = fieldMap[field];
+      filters[field].forEach(function(value) {
+        $(selector).each(function() {
+          if ($(this).val() === value) {
+            $(this).prop('checked', true);
+          }
+        });
+      });
+      // Update "select all" state for each field
+      updateSelectAll(field);
     });
   }
 
@@ -341,6 +465,7 @@
     }
 
     loadLogs();
+    loadFilterOptions();
   }
 
   /**
@@ -358,12 +483,14 @@
   function clearFilters() {
     state.filters = {};
     state.currentPage = 1;
+    state.pipelineSteps = [];
     
     // Clear UI
     clearFiltersUI();
     $('#presetFilter').val('');
     
     loadLogs();
+    loadFilterOptions();
   }
 
   /**

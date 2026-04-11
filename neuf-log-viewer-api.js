@@ -16,6 +16,7 @@ const path = require('path');
 const fs = require('fs');
 const { NEUFLogService } = require('./lib/neuf-log-service');
 const { FilterService } = require('./lib/filters');
+const { PipelineService } = require('./lib/pipeline');
 const { logParserService } = require('./lib/log-parser');
 
 const app = express();
@@ -217,6 +218,49 @@ app.post('/filter_option', async (req, res) => {
 });
 
 /**
+ * POST /pipeline_suggestions
+ * Get dynamic pipeline filter suggestions based on current filtered data.
+ * Suggestions are recomputed after every filter step so they stay contextually
+ * relevant as the user progressively narrows down results.
+ *
+ * Body: {
+ *   filters: { ... }  - Currently applied filters (same shape as filter_log)
+ * }
+ *
+ * Response: {
+ *   success: true,
+ *   suggestions: [
+ *     { id, label, description, filters }
+ *   ]
+ * }
+ */
+app.post('/pipeline_suggestions', async (req, res) => {
+  try {
+    const { filters = {} } = req.body;
+
+    // Parse and normalise filters (API layer responsibility)
+    const parsedFilters = parseFiltersFromRequest(filters);
+
+    // Fetch filter options with no result-set limit so suggestions are accurate
+    const result = await logService.getFilterOptions(FOLDER_PATH, parsedFilters, false);
+
+    if (!result.success) {
+      return res.json({ success: false, suggestions: [] });
+    }
+
+    // Generate suggestions from live filter option data
+    const suggestions = PipelineService.getSuggestions(result.data, parsedFilters);
+
+    res.json({ success: true, suggestions });
+
+  } catch (error) {
+    console.error('❌ Pipeline suggestions error:', error);
+    console.error('Stack trace:', error.stack);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
  * GET /health
  * Health check endpoint
  */
@@ -268,9 +312,10 @@ async function main() {
       console.log(`📁 Folder path: ${FOLDER_PATH}`);
       console.log('');
       console.log('📋 Available endpoints:');
-      console.log('  POST   /filter_log        - Filter logs');
-      console.log('  POST   /filter_option     - Get filter options');
-      console.log('  GET    /health            - Health check');
+      console.log('  POST   /filter_log            - Filter logs');
+      console.log('  POST   /filter_option         - Get filter options');
+      console.log('  POST   /pipeline_suggestions  - Get dynamic filter suggestions');
+      console.log('  GET    /health                - Health check');
       console.log('');
       console.log('Press Ctrl+C to stop the server');
       console.log('');
