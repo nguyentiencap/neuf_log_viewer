@@ -241,8 +241,9 @@ app.post('/pipeline_suggestions', async (req, res) => {
     // Parse and normalize filters (API layer responsibility)
     const parsedFilters = parseFiltersFromRequest(filters);
 
-    // Fetch filter options with no result-set limit so suggestions are accurate
-    const result = await logService.getFilterOptions(FOLDER_PATH, parsedFilters, false);
+    // Standard limit (top 20 per category) is sufficient for all suggestion types:
+    // devices needs 2, components needs 10, threads needs 5, logLevels are always unlimited.
+    const result = await logService.getFilterOptions(FOLDER_PATH, parsedFilters, true);
 
     if (!result.success) {
       return res.json({ success: false, suggestions: [] });
