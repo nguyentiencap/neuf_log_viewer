@@ -148,7 +148,7 @@ runTest('_createDatabaseService: Returns db and databaseService objects', () => 
 // ============================================================================
 printSection('Testing DatabaseService._materializeContextIds()');
 
-runTest('_materializeContextIds: Populates temp_context_ids with correct IDs', async () => {
+runTest('_materializeContextIds: Populates context_results with correct rows', async () => {
   try {
     const SQL = await NEUFLogService.initializeSqlJs();
     const sqlDb = new SQL.Database();
@@ -165,11 +165,11 @@ runTest('_materializeContextIds: Populates temp_context_ids with correct IDs', a
 
     // Match is id=3 ("line 3 error"), context 1 means ids 2,3,4 should be included
     databaseService._materializeContextIds({ search: 'error', contextLines: 1 });
-    const rows = databaseService.db.prepare('SELECT id FROM temp_context_ids ORDER BY id').all();
+    const rows = databaseService.db.prepare('SELECT id FROM context_results ORDER BY id').all();
     const ids = rows.map(r => r.id);
 
     return assertEqual(ids, [2, 3, 4],
-      '_materializeContextIds should populate temp_context_ids with match ± 1 context IDs');
+      '_materializeContextIds should populate context_results with match ± 1 context rows');
   } catch (error) {
     console.error(`❌ FAILED: ${error.message}`);
     return false;
