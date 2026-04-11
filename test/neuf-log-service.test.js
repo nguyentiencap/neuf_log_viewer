@@ -144,36 +144,156 @@ runTest('_createDatabaseService: Returns db and databaseService objects', () => 
 });
 
 // ============================================================================
-// Test _tempContextTableExists
+// Test _buildContextIdSubquery (DatabaseService)
 // ============================================================================
-printSection('Testing _tempContextTableExists()');
+printSection('Testing DatabaseService._buildContextIdSubquery()');
 
-runTest('_tempContextTableExists: Returns false when table does not exist', () => {
-  // Create a mock database wrapper
-  const mockDb = {
-    prepare: (sql) => ({
-      get: () => null
-    })
-  };
-  
-  const result = logService._tempContextTableExists(mockDb);
-  
-  return assertEqual(result, false,
-    'Should return false when temp_context_filter table does not exist');
+runTest('_buildContextIdSubquery: Returns subquery and params for context search', async () => {
+  try {
+    const SQL = await NEUFLogService.initializeSqlJs();
+    const sqlDb = new SQL.Database();
+    const { databaseService } = logService._createDatabaseService(sqlDb);
+
+    // Initialize schema and insert test data
+    databaseService.initDatabase();
+    const insert = databaseService.prepareInsert();
+    insert.run('test.log', '2026.01.01 00:00:00.000', 'T1', 'D1', 'com.test', 'INFO', 'hello world');
+    insert.run('test.log', '2026.01.01 00:00:01.000', 'T1', 'D1', 'com.test', 'ERROR', 'foo error bar');
+    insert.run('test.log', '2026.01.01 00:00:02.000', 'T1', 'D1', 'com.test', 'INFO', 'after error');
+    insert.run('test.log', '2026.01.01 00:00:03.000', 'T1', 'D1', 'com.test', 'DEBUG', 'unrelated');
+
+    const filters = { search: 'error', contextLines: 1 };
+    const { subquery, params } = databaseService._buildContextIdSubquery(filters);
+
+    const hasSubquery = typeof subquery === 'string' && subquery.includes('SELECT DISTINCT l2.id');
+    const hasParams = Array.isArray(params);
+
+    if (hasSubquery && hasParams) {
+      console.log('✅ PASSED: Returns subquery string and params array');
+      return true;
+    } else {
+      console.error('❌ FAILED: Unexpected return value');
+      console.error(`  hasSubquery: ${hasSubquery}`);
+      console.error(`  hasParams: ${hasParams}`);
+      return false;
+    }
+  } catch (error) {
+    console.error(`❌ FAILED: ${error.message}`);
+    return false;
+  }
 });
 
-runTest('_tempContextTableExists: Returns true when table exists', () => {
-  // Create a mock database wrapper
-  const mockDb = {
-    prepare: (sql) => ({
-      get: () => ({ name: 'temp_context_filter' })
-    })
-  };
-  
-  const result = logService._tempContextTableExists(mockDb);
-  
-  return assertEqual(result, true,
-    'Should return true when temp_context_filter table exists');
+runTest('_buildContextIdSubquery: Subquery returns correct context IDs', async () => {
+  try {
+    const SQL = await NEUFLogService.initializeSqlJs();
+    const sqlDb = new SQL.Database();
+    const { databaseService } = logService._createDatabaseService(sqlDb);
+
+    databaseService.initDatabase();
+    const insert = databaseService.prepareInsert();
+    insert.run('test.log', '2026.01.01 00:00:00.000', 'T1', 'D1', 'com.test', 'INFO', 'line 1');
+    insert.run('test.log', '2026.01.01 00:00:01.000', 'T1', 'D1', 'com.test', 'INFO', 'line 2');
+    insert.run('test.log', '2026.01.01 00:00:02.000', 'T1', 'D1', 'com.test', 'ERROR', 'line 3 error');
+    insert.run('test.log', '2026.01.01 00:00:03.000', 'T1', 'D1', 'com.test', 'INFO', 'line 4');
+    insert.run('test.log', '2026.01.01 00:00:04.000', 'T1', 'D1', 'com.test', 'INFO', 'line 5');
+
+    // Match is id=3 ("line 3 error"), context 1 means ids 2,3,4 should be included
+    const filters = { search: 'error', contextLines: 1 };
+    const { subquery, params } = databaseService._buildContextIdSubquery(filters);
+
+    const rows = databaseService.db.prepare(`SELECT id FROM logs WHERE id IN (${subquery}) ORDER BY id`).all(...params);
+    const ids = rows.map(r => r.id);
+
+    return assertEqual(ids, [2, 3, 4],
+      'Context subquery should return ids of match ± 1 context lines');
+  } catch (error) {
+    console.error(`❌ FAILED: ${error.message}`);
+    return false;
+  }
+});
+
+runTest('searchWithContextLines: Returns context logs using id-range query', async () => {
+  try {
+    const SQL = await NEUFLogService.initializeSqlJs();
+    const sqlDb = new SQL.Database();
+    const { databaseService } = logService._createDatabaseService(sqlDb);
+
+    databaseService.initDatabase();
+    const insert = databaseService.prepareInsert();
+    insert.run('test.log', '2026.01.01 00:00:00.000', 'T1', 'D1', 'com.test', 'INFO', 'line 1');
+    insert.run('test.log', '2026.01.01 00:00:01.000', 'T1', 'D1', 'com.test', 'INFO', 'line 2');
+    insert.run('test.log', '2026.01.01 00:00:02.000', 'T1', 'D1', 'com.test', 'ERROR', 'line 3 error');
+    insert.run('test.log', '2026.01.01 00:00:03.000', 'T1', 'D1', 'com.test', 'INFO', 'line 4');
+    insert.run('test.log', '2026.01.01 00:00:04.000', 'T1', 'D1', 'com.test', 'INFO', 'line 5');
+
+    const result = databaseService.searchWithContextLines(
+      { search: 'error', contextLines: 1 },
+      { page: 1, pageSize: 100 }
+    );
+
+    const ids = result.logs.map(l => l.id);
+    const correctIds = ids.length === 3 && ids[0] === 2 && ids[1] === 3 && ids[2] === 4;
+    const correctTotal = result.total === 3;
+
+    if (correctIds && correctTotal) {
+      console.log('✅ PASSED: Returns correct context logs (match ± contextLines)');
+      return true;
+    } else {
+      console.error('❌ FAILED: Unexpected context logs');
+      console.error(`  ids: ${JSON.stringify(ids)}`);
+      console.error(`  total: ${result.total}`);
+      return false;
+    }
+  } catch (error) {
+    console.error(`❌ FAILED: ${error.message}`);
+    return false;
+  }
+});
+
+runTest('getFilterOptions with context: counts scoped to context result set', async () => {
+  try {
+    const SQL = await NEUFLogService.initializeSqlJs();
+    const sqlDb = new SQL.Database();
+    const { databaseService } = logService._createDatabaseService(sqlDb);
+
+    databaseService.initDatabase();
+    const insert = databaseService.prepareInsert();
+    // 5 logs across two devices; only id 3 matches search "error"
+    insert.run('a.log', '2026.01.01 00:00:00.000', 'T1', 'DevA', 'com.test', 'INFO', 'line 1');
+    insert.run('a.log', '2026.01.01 00:00:01.000', 'T1', 'DevA', 'com.test', 'INFO', 'line 2');
+    insert.run('a.log', '2026.01.01 00:00:02.000', 'T1', 'DevA', 'com.test', 'ERROR', 'line 3 error');
+    insert.run('b.log', '2026.01.01 00:00:03.000', 'T1', 'DevB', 'com.test', 'INFO', 'line 4');
+    insert.run('b.log', '2026.01.01 00:00:04.000', 'T1', 'DevB', 'com.test', 'INFO', 'line 5');
+
+    // Context 1 around match id=3 → context set = ids 2,3,4
+    // id=4 belongs to b.log/DevB, ids 2,3 belong to a.log/DevA
+    const options = databaseService.getFilterOptions(
+      { search: 'error', contextLines: 1 },
+      'logs',
+      false
+    );
+
+    // totalLogs should be 3 (context result set size)
+    const correctTotal = options.totalLogs === 3;
+
+    // Both filenames should appear in the context set
+    const filenameValues = options.filenames.map(f => f.filename);
+    const hasALog = filenameValues.includes('a.log');
+    const hasBLog = filenameValues.includes('b.log');
+
+    if (correctTotal && hasALog && hasBLog) {
+      console.log('✅ PASSED: Filter options scoped to context result set');
+      return true;
+    } else {
+      console.error('❌ FAILED: Filter options not scoped correctly');
+      console.error(`  totalLogs: ${options.totalLogs} (expected 3)`);
+      console.error(`  filenames: ${JSON.stringify(filenameValues)}`);
+      return false;
+    }
+  } catch (error) {
+    console.error(`❌ FAILED: ${error.message}`);
+    return false;
+  }
 });
 
 // ============================================================================
