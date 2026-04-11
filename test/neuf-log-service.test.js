@@ -144,51 +144,17 @@ runTest('_createDatabaseService: Returns db and databaseService objects', () => 
 });
 
 // ============================================================================
-// Test _buildContextIdSubquery (DatabaseService)
+// Test _materializeContextIds (DatabaseService)
 // ============================================================================
-printSection('Testing DatabaseService._buildContextIdSubquery()');
+printSection('Testing DatabaseService._materializeContextIds()');
 
-runTest('_buildContextIdSubquery: Returns subquery and params for context search', async () => {
+runTest('_materializeContextIds: Populates temp_context_ids with correct IDs', async () => {
   try {
     const SQL = await NEUFLogService.initializeSqlJs();
     const sqlDb = new SQL.Database();
     const { databaseService } = logService._createDatabaseService(sqlDb);
 
     // Initialize schema and insert test data
-    databaseService.initDatabase();
-    const insert = databaseService.prepareInsert();
-    insert.run('test.log', '2026.01.01 00:00:00.000', 'T1', 'D1', 'com.test', 'INFO', 'hello world');
-    insert.run('test.log', '2026.01.01 00:00:01.000', 'T1', 'D1', 'com.test', 'ERROR', 'foo error bar');
-    insert.run('test.log', '2026.01.01 00:00:02.000', 'T1', 'D1', 'com.test', 'INFO', 'after error');
-    insert.run('test.log', '2026.01.01 00:00:03.000', 'T1', 'D1', 'com.test', 'DEBUG', 'unrelated');
-
-    const filters = { search: 'error', contextLines: 1 };
-    const { subquery, params } = databaseService._buildContextIdSubquery(filters);
-
-    const hasSubquery = typeof subquery === 'string' && subquery.includes('SELECT DISTINCT l2.id');
-    const hasParams = Array.isArray(params);
-
-    if (hasSubquery && hasParams) {
-      console.log('✅ PASSED: Returns subquery string and params array');
-      return true;
-    } else {
-      console.error('❌ FAILED: Unexpected return value');
-      console.error(`  hasSubquery: ${hasSubquery}`);
-      console.error(`  hasParams: ${hasParams}`);
-      return false;
-    }
-  } catch (error) {
-    console.error(`❌ FAILED: ${error.message}`);
-    return false;
-  }
-});
-
-runTest('_buildContextIdSubquery: Subquery returns correct context IDs', async () => {
-  try {
-    const SQL = await NEUFLogService.initializeSqlJs();
-    const sqlDb = new SQL.Database();
-    const { databaseService } = logService._createDatabaseService(sqlDb);
-
     databaseService.initDatabase();
     const insert = databaseService.prepareInsert();
     insert.run('test.log', '2026.01.01 00:00:00.000', 'T1', 'D1', 'com.test', 'INFO', 'line 1');
@@ -198,14 +164,34 @@ runTest('_buildContextIdSubquery: Subquery returns correct context IDs', async (
     insert.run('test.log', '2026.01.01 00:00:04.000', 'T1', 'D1', 'com.test', 'INFO', 'line 5');
 
     // Match is id=3 ("line 3 error"), context 1 means ids 2,3,4 should be included
-    const filters = { search: 'error', contextLines: 1 };
-    const { subquery, params } = databaseService._buildContextIdSubquery(filters);
-
-    const rows = databaseService.db.prepare(`SELECT id FROM logs WHERE id IN (${subquery}) ORDER BY id`).all(...params);
+    databaseService._materializeContextIds({ search: 'error', contextLines: 1 });
+    const rows = databaseService.db.prepare('SELECT id FROM temp_context_ids ORDER BY id').all();
     const ids = rows.map(r => r.id);
 
     return assertEqual(ids, [2, 3, 4],
-      'Context subquery should return ids of match ± 1 context lines');
+      '_materializeContextIds should populate temp_context_ids with match ± 1 context IDs');
+  } catch (error) {
+    console.error(`❌ FAILED: ${error.message}`);
+    return false;
+  }
+});
+
+runTest('_materializeContextIds: Throws for invalid contextLines', async () => {
+  try {
+    const SQL = await NEUFLogService.initializeSqlJs();
+    const sqlDb = new SQL.Database();
+    const { databaseService } = logService._createDatabaseService(sqlDb);
+    databaseService.initDatabase();
+
+    let threw = false;
+    try {
+      databaseService._materializeContextIds({ search: 'error', contextLines: 0 });
+    } catch (e) {
+      threw = true;
+    }
+
+    return assertEqual(threw, true,
+      '_materializeContextIds should throw for contextLines = 0');
   } catch (error) {
     console.error(`❌ FAILED: ${error.message}`);
     return false;
