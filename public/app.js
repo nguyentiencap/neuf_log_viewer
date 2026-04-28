@@ -16,7 +16,8 @@
     filters: {},
     filterOptions: {},
     presets: [],
-    pipelineSteps: []   // history of applied pipeline suggestions
+    pipelineSteps: [],    // history of applied pipeline suggestions
+    activeFilterTable: 'logs'  // table to use for filter options (updated after each filter operation)
   };
 
   // API base URL
@@ -57,7 +58,6 @@
       method: 'GET',
       success: function(response) {
         if (response.databaseScanned) {
-          loadFilterOptions();
           loadLogs();
         } else {
           showStatus('⚠️ No database found. Please start the server with a log folder path.', 'warning');
@@ -80,7 +80,8 @@
       contentType: 'application/json',
       data: JSON.stringify({
         folderPath: state.folderPath,
-        filters: state.filters
+        filters: state.filters,
+        inputTable: state.activeFilterTable
       }),
       success: function(response) {
         if (response.success) {
@@ -105,7 +106,7 @@
       url: API_BASE + '/pipeline_suggestions',
       method: 'POST',
       contentType: 'application/json',
-      data: JSON.stringify({ filters: state.filters }),
+      data: JSON.stringify({ filters: state.filters, inputTable: state.activeFilterTable }),
       success: function(response) {
         if (response.success) {
           renderPipelineSuggestions(response.suggestions || []);
@@ -176,7 +177,6 @@
     // Reset to page 1 and reload
     state.currentPage = 1;
     loadLogs();
-    loadFilterOptions();
   }
 
   /**
@@ -461,7 +461,6 @@
     }
 
     loadLogs();
-    loadFilterOptions();
   }
 
   /**
@@ -480,13 +479,13 @@
     state.filters = {};
     state.currentPage = 1;
     state.pipelineSteps = [];
-    
+    state.activeFilterTable = 'logs';
+
     // Clear UI
     clearFiltersUI();
     $('#presetFilter').val('');
-    
+
     loadLogs();
-    loadFilterOptions();
   }
 
   /**
@@ -507,8 +506,11 @@
         if (response.success) {
           state.total = response.total;
           state.totalPages = response.totalPages;
+          // Update active filter table to the output table created by filter_log
+          state.activeFilterTable = 'filter_step_1';
           renderLogs(response.logs);
           updatePagination();
+          loadFilterOptions();
         } else {
           showStatus('❌ Failed to load logs: ' + response.error, 'error');
         }

@@ -143,38 +143,6 @@ runTest('_createDatabaseService: Returns db and databaseService objects', () => 
   }
 });
 
-// ============================================================================
-// Test _tempContextTableExists
-// ============================================================================
-printSection('Testing _tempContextTableExists()');
-
-runTest('_tempContextTableExists: Returns false when table does not exist', () => {
-  // Create a mock database wrapper
-  const mockDb = {
-    prepare: (sql) => ({
-      get: () => null
-    })
-  };
-  
-  const result = logService._tempContextTableExists(mockDb);
-  
-  return assertEqual(result, false,
-    'Should return false when temp_context_filter table does not exist');
-});
-
-runTest('_tempContextTableExists: Returns true when table exists', () => {
-  // Create a mock database wrapper
-  const mockDb = {
-    prepare: (sql) => ({
-      get: () => ({ name: 'temp_context_filter' })
-    })
-  };
-  
-  const result = logService._tempContextTableExists(mockDb);
-  
-  return assertEqual(result, true,
-    'Should return true when temp_context_filter table exists');
-});
 
 // ============================================================================
 // Test clearDatabase
@@ -533,8 +501,8 @@ runTest('filterLogs: Returns all logs with empty filters', async () => {
     testPaths = await createTestDatabase();
     const { testFolder } = testPaths;
     
-    const result = await logService.filterLogs(testFolder, {}, { page: 1, pageSize: 100 });
-    
+    const result = await logService.filterLogs(testFolder, [{ filters: {}, inputTable: 'logs', outputTable: 'filter_step_1' }], { page: 1, pageSize: 100 });
+
     const hasSuccess = result.success === true;
     const hasLogs = Array.isArray(result.logs);
     const hasTotal = typeof result.total === 'number';
@@ -572,9 +540,9 @@ runTest('filterLogs: Filters by log level', async () => {
     testPaths = await createTestDatabase();
     const { testFolder } = testPaths;
     
-    const filters = { logLevel: ['ERROR'] };
-    const result = await logService.filterLogs(testFolder, filters, { page: 1, pageSize: 100 });
-    
+    const filters = { logLevelInclude: ['ERROR'] };
+    const result = await logService.filterLogs(testFolder, [{ filters, inputTable: 'logs', outputTable: 'filter_step_1' }], { page: 1, pageSize: 100 });
+
     const hasOnlyErrorLogs = result.logs.every(log => log.log_level === 'ERROR');
     const correctCount = result.logs.length === 1;
     
@@ -604,9 +572,9 @@ runTest('filterLogs: Filters by device ID', async () => {
     testPaths = await createTestDatabase();
     const { testFolder } = testPaths;
     
-    const filters = { deviceId: ['Device001'] };
-    const result = await logService.filterLogs(testFolder, filters, { page: 1, pageSize: 100 });
-    
+    const filters = { deviceInclude: ['Device001'] };
+    const result = await logService.filterLogs(testFolder, [{ filters, inputTable: 'logs', outputTable: 'filter_step_1' }], { page: 1, pageSize: 100 });
+
     const hasOnlyDevice001 = result.logs.every(log => log.device_id === 'Device001');
     const correctCount = result.logs.length === 3; // 3 logs with Device001
     
@@ -637,10 +605,10 @@ runTest('filterLogs: Pagination works correctly', async () => {
     const { testFolder } = testPaths;
     
     // Get first page with 2 items
-    const result1 = await logService.filterLogs(testFolder, {}, { page: 1, pageSize: 2 });
+    const result1 = await logService.filterLogs(testFolder, [{ filters: {}, inputTable: 'logs', outputTable: 'filter_step_1' }], { page: 1, pageSize: 2 });
     // Get second page with 2 items
-    const result2 = await logService.filterLogs(testFolder, {}, { page: 2, pageSize: 2 });
-    
+    const result2 = await logService.filterLogs(testFolder, [{ filters: {}, inputTable: 'logs', outputTable: 'filter_step_1' }], { page: 2, pageSize: 2 });
+
     const page1HasTwoLogs = result1.logs.length === 2;
     const page2HasTwoLogs = result2.logs.length === 2;
     const totalPagesCorrect = result1.totalPages === 3; // 5 logs / 2 per page = 3 pages

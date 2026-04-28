@@ -143,10 +143,13 @@ app.post('/filter_log', async (req, res) => {
     
     // Parse and normalize filters (API layer responsibility)
     const parsedFilters = parseFiltersFromRequest(filters);
-    
+
+    // Wrap into a single-step chain: logs -> filter_step_1
+    const steps = [{ filters: parsedFilters, inputTable: 'logs', outputTable: 'filter_step_1' }];
+
     // Filter logs (loadDatabase will check if DB exists)
-    const result = await logService.filterLogs(FOLDER_PATH, parsedFilters, { page, pageSize });
-    
+    const result = await logService.filterLogs(FOLDER_PATH, steps, { page, pageSize });
+
     // If raw=true, return only raw log data
     if (raw) {
       res.json({
@@ -184,19 +187,20 @@ app.post('/filter_log', async (req, res) => {
  *   filters: {
  *     // Same as filter_log
  *   },
- *   limitedOptions: boolean (optional, default: true) - Limit thread_name and components to top 20
+ *   limitedOptions: boolean (optional, default: true) - Limit thread_name and components to top 20,
+ *   inputTable: string (optional, default: 'logs') - Table to query options from (e.g. 'filter_step_1')
  * }
  */
 app.post('/filter_option', async (req, res) => {
   try {
-    const { filters = {}, limitedOptions = true } = req.body;
-    
+    const { filters = {}, limitedOptions = true, inputTable = 'logs' } = req.body;
+
     // Parse and normalize filters (API layer responsibility)
     const parsedFilters = parseFiltersFromRequest(filters);
-    
+
     // Get filter options (loadDatabase will check if DB exists)
-    const result = await logService.getFilterOptions(FOLDER_PATH, parsedFilters, limitedOptions);
-    
+    const result = await logService.getFilterOptions(FOLDER_PATH, parsedFilters, limitedOptions, inputTable);
+
     // Add presets to response (API layer responsibility)
     const presets = filterService.getAvailablePresets();
     res.json({
@@ -236,14 +240,14 @@ app.post('/filter_option', async (req, res) => {
  */
 app.post('/pipeline_suggestions', async (req, res) => {
   try {
-    const { filters = {} } = req.body;
+    const { filters = {}, inputTable = 'logs' } = req.body;
 
     // Parse and normalize filters (API layer responsibility)
     const parsedFilters = parseFiltersFromRequest(filters);
 
     // Standard limit (top 20 per category) is sufficient for all suggestion types:
     // devices needs 2, components needs 10, threads needs 5, logLevels are always unlimited.
-    const result = await logService.getFilterOptions(FOLDER_PATH, parsedFilters, true);
+    const result = await logService.getFilterOptions(FOLDER_PATH, parsedFilters, true, inputTable);
 
     if (!result.success) {
       return res.json({ success: false, suggestions: [] });
@@ -256,6 +260,65 @@ app.post('/pipeline_suggestions', async (req, res) => {
 
   } catch (error) {
     console.error('❌ Pipeline suggestions error:', error);
+    console.error('Stack trace:', error.stack);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /filter_log_chain
+ * Filter logs through a multi-step chain.
+ * Each step specifies inputTable, outputTable, and filters.
+ * Results are read from the last step's outputTable.
+ *
+ * Body: {
+ *   steps: [
+ *     { inputTable: "logs", outputTable: "filter_step_1", filters: { logLevelInclude: ["ERROR"] } },
+ *     { inputTable: "filter_step_1", outputTable: "filter_step_2", filters: { deviceInclude: ["DEV001"] } }
+ *   ],
+ *   page: number (default: 1),
+ *   pageSize: number (default: 1000),
+ *   raw: boolean (default: false)
+ * }
+ *
+ * Response: {
+ *   success: true,
+ *   logs: [...],
+ *   total: number,
+ *   page: number,
+ *   pageSize: number,
+ *   totalPages: number,
+ *   stepCounts: [number, ...]  - row count after each step
+ * }
+ */
+app.post('/filter_log_chain', async (req, res) => {
+  try {
+    const { steps = [], page = 1, pageSize = 1000, raw = false } = req.body;
+
+    // Parse and normalize filters for each step (API layer responsibility)
+    const parsedSteps = steps.map(step => ({
+      filters: parseFiltersFromRequest(step.filters || {}),
+      inputTable: step.inputTable,
+      outputTable: step.outputTable
+    }));
+
+    const result = await logService.filterLogs(FOLDER_PATH, parsedSteps, { page, pageSize });
+
+    if (raw) {
+      res.json(result);
+      return;
+    }
+
+    // Format logs at API layer
+    const formattedLogs = result.logs.map(log => ({
+      ...log,
+      formattedLog: logParserService.formatLogEntry(log)
+    }));
+
+    res.json({ ...result, logs: formattedLogs });
+
+  } catch (error) {
+    console.error('❌ Filter chain error:', error);
     console.error('Stack trace:', error.stack);
     res.status(500).json({ success: false, error: error.message });
   }
