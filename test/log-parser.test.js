@@ -112,50 +112,56 @@ printSection('Testing getTimeBucket()');
 
 runTest('getTimeBucket: First half hour (00-29 minutes)', () => {
   const result = parser.getTimeBucket('2026.04.08 14:15:30.123');
-  return assertEqual(result, '2026-04-08 14:00', 
-    'Should round to :00 for minutes 0-29');
+  const expected = Math.floor(Date.UTC(2026, 3, 8, 14, 15, 0) / 1000);
+  return assertEqual(result, expected,
+    'Should truncate seconds/ms and keep minute for minutes 0-29');
 });
 
 runTest('getTimeBucket: Second half hour (30-59 minutes)', () => {
   const result = parser.getTimeBucket('2026.04.08 14:45:30.123');
-  return assertEqual(result, '2026-04-08 14:30', 
-    'Should round to :30 for minutes 30-59');
+  const expected = Math.floor(Date.UTC(2026, 3, 8, 14, 45, 0) / 1000);
+  return assertEqual(result, expected,
+    'Should truncate seconds/ms and keep minute for minutes 30-59');
 });
 
 runTest('getTimeBucket: Exactly 00 minutes', () => {
   const result = parser.getTimeBucket('2026.04.08 14:00:00.000');
-  return assertEqual(result, '2026-04-08 14:00', 
-    'Should return :00 for exactly 00 minutes');
+  const expected = Math.floor(Date.UTC(2026, 3, 8, 14, 0, 0) / 1000);
+  return assertEqual(result, expected,
+    'Should return minute-level bucket for exactly 00 minutes');
 });
 
 runTest('getTimeBucket: Exactly 30 minutes', () => {
   const result = parser.getTimeBucket('2026.04.08 14:30:00.000');
-  return assertEqual(result, '2026-04-08 14:30', 
-    'Should return :30 for exactly 30 minutes');
+  const expected = Math.floor(Date.UTC(2026, 3, 8, 14, 30, 0) / 1000);
+  return assertEqual(result, expected,
+    'Should return minute-level bucket for exactly 30 minutes');
 });
 
 runTest('getTimeBucket: Minute 29 (boundary)', () => {
   const result = parser.getTimeBucket('2026.04.08 14:29:59.999');
-  return assertEqual(result, '2026-04-08 14:00', 
-    'Should round to :00 for minute 29');
+  const expected = Math.floor(Date.UTC(2026, 3, 8, 14, 29, 0) / 1000);
+  return assertEqual(result, expected,
+    'Should return minute-level bucket for minute 29');
 });
 
 runTest('getTimeBucket: Minute 59 (boundary)', () => {
   const result = parser.getTimeBucket('2026.04.08 14:59:59.999');
-  return assertEqual(result, '2026-04-08 14:30', 
-    'Should round to :30 for minute 59');
+  const expected = Math.floor(Date.UTC(2026, 3, 8, 14, 59, 0) / 1000);
+  return assertEqual(result, expected,
+    'Should return minute-level bucket for minute 59');
 });
 
 runTest('getTimeBucket: Invalid timestamp format', () => {
   const result = parser.getTimeBucket('invalid-timestamp');
-  return assertEqual(result, 'unknown', 
-    'Should return "unknown" for invalid format');
+  return assertEqual(result, null,
+    'Should return null for invalid format');
 });
 
 runTest('getTimeBucket: Null input', () => {
   const result = parser.getTimeBucket(null);
-  return assertEqual(result, 'unknown', 
-    'Should return "unknown" for null input');
+  return assertEqual(result, null,
+    'Should return null for null input');
 });
 
 // ============================================================================

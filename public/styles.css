@@ -492,8 +492,8 @@ body {
   margin-left: 5px;
 }
 
-/* Pipeline Suggestions */
-.pipeline-group {
+/* Preset Suggestions */
+.preset-group {
   background: #f0f7ff;
   padding: 10px;
   border-radius: 4px;
@@ -501,7 +501,7 @@ body {
   border: 1px solid #b8daff;
 }
 
-.pipeline-header {
+.preset-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -511,19 +511,19 @@ body {
   font-size: 12px;
 }
 
-.pipeline-subtitle {
+.preset-subtitle {
   font-weight: normal;
   font-size: 11px;
   color: #6c757d;
 }
 
-.pipeline-suggestions {
+.preset-suggestions {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-.pipeline-btn {
+.preset-btn {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -538,18 +538,18 @@ body {
   font-family: inherit;
 }
 
-.pipeline-btn:hover {
+.preset-btn:hover {
   background: #cce5ff;
   border-color: #80bdff;
 }
 
-.pipeline-btn-label {
+.preset-btn-label {
   font-size: 12px;
   font-weight: bold;
   color: #004085;
 }
 
-.pipeline-btn-desc {
+.preset-btn-desc {
   font-size: 11px;
   color: #6c757d;
   margin-top: 2px;

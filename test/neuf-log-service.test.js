@@ -124,7 +124,8 @@ runTest('_createDatabaseService: Returns db and databaseService objects', () => 
       all: () => [],
       run: () => {}
     }),
-    export: () => new Uint8Array()
+    export: () => new Uint8Array(),
+    create_function: () => {}
   };
   
   const result = logService._createDatabaseService(mockSqlDb);

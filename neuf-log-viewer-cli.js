@@ -552,6 +552,9 @@ async function handleFilter(folderPath, args) {
     const pagination = parsePaginationFromArgs(args);
     const format = parseOutputFormat(args);
 
+    // Resolve preset suggestion if set (delegates to service)
+    await logService.applyPreset(folderPath, filters);
+
     // Filter logs (loadDatabase will check if DB exists)
     const steps = [{ filters }];
     const result = await logService.filterLogs(folderPath, steps, pagination);

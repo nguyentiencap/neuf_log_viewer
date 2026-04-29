@@ -20,14 +20,7 @@ const { assertEqual, runTest, printSection, printSummary } = require('./test-hel
 function buildDatabaseService(SQL, rows) {
   const sqlDb = new SQL.Database();
   const db = new DatabaseWrapper(sqlDb);
-  const getTimeBucket = (ts) => {
-    const match = ts.match(/^(\d{4})\.(\d{2})\.(\d{2}) (\d{2}):(\d{2})/);
-    if (!match) return 'unknown';
-    const [, year, month, day, hour, min] = match;
-    const bucket = parseInt(min, 10) < 30 ? '00' : '30';
-    return `${year}-${month}-${day} ${hour}:${bucket}`;
-  };
-  const databaseService = new DatabaseService(db, getTimeBucket);
+  const databaseService = new DatabaseService(db);
 
   // Create logs table
   databaseService.initDatabase();

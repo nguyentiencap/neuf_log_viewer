@@ -15,8 +15,7 @@
     folderPath: './logs',
     filters: {},
     filterOptions: {},
-    presets: [],
-    pipelineSteps: [],    // history of applied pipeline suggestions
+    presetSteps: [],    // history of applied preset suggestions
     activeFilterStep: 0   // step number to query filter options from (0 = logs, N = filter_N)
   };
 
@@ -36,7 +35,6 @@
     // Filter actions
     $('#applyFilterBtn').on('click', applyFilters);
     $('#clearFilterBtn').on('click', clearFilters);
-    $('#presetFilter').on('change', onPresetChange);
 
     // Pagination
     $('#prevPageBtn').on('click', previousPage);
@@ -74,21 +72,22 @@
    * Load filter options
    */
   function loadFilterOptions() {
+    // In chain mode, stepNumber already points to the correct temp table — no need to send manual filters
+    const filtersPayload = state.presetSteps.length > 0 ? {} : state.filters;
     $.ajax({
       url: API_BASE + '/filter_option',
       method: 'POST',
       contentType: 'application/json',
       data: JSON.stringify({
         folderPath: state.folderPath,
-        filters: state.filters,
+        filters: filtersPayload,
         stepNumber: state.activeFilterStep
       }),
       success: function(response) {
         if (response.success) {
           state.filterOptions = response.data;
-          state.presets = response.data.presets || [];
           renderFilterOptions();
-          loadPipelineSuggestions();
+          loadPresetSuggestions();
         }
       },
       error: function(xhr) {
@@ -99,89 +98,79 @@
   }
 
   /**
-   * Load pipeline suggestions based on current filters
+   * Load preset suggestions based on current filters
    */
-  function loadPipelineSuggestions() {
+  function loadPresetSuggestions() {
+    // In chain mode, stepNumber already points to the correct temp table — no need to send manual filters
+    const filtersPayload = state.presetSteps.length > 0 ? {} : state.filters;
     $.ajax({
-      url: API_BASE + '/pipeline_suggestions',
+      url: API_BASE + '/preset_suggestions',
       method: 'POST',
       contentType: 'application/json',
-      data: JSON.stringify({ filters: state.filters, stepNumber: state.activeFilterStep }),
+      data: JSON.stringify({ filters: filtersPayload, stepNumber: state.activeFilterStep }),
       success: function(response) {
         if (response.success) {
-          renderPipelineSuggestions(response.suggestions || []);
+          renderPresetSuggestions(response.suggestions || []);
         }
       },
       error: function() {
         // Silently hide suggestions panel on error
-        $('#pipelineGroup').hide();
+        $('#presetGroup').hide();
       }
     });
   }
 
   /**
-   * Render pipeline suggestions as clickable links
+   * Render preset suggestions as clickable links
    * @param {Array} suggestions - List of suggestion objects
    */
-  function renderPipelineSuggestions(suggestions) {
-    const container = $('#pipelineSuggestions');
+  function renderPresetSuggestions(suggestions) {
+    const container = $('#presetSuggestions');
     container.empty();
 
     if (!suggestions || suggestions.length === 0) {
-      $('#pipelineGroup').hide();
+      $('#presetGroup').hide();
       return;
     }
 
     suggestions.forEach(function(suggestion) {
-      const btn = $('<button class="pipeline-btn" type="button"></button>');
+      const btn = $('<button class="preset-btn" type="button"></button>');
       btn.attr('title', suggestion.description);
-      btn.html('<span class="pipeline-btn-label">' + escapeHtml(suggestion.label) + '</span>' +
-               '<span class="pipeline-btn-desc">' + escapeHtml(suggestion.description) + '</span>');
+      btn.html('<span class="preset-btn-label">' + escapeHtml(suggestion.label) + '</span>' +
+               '<span class="preset-btn-desc">' + escapeHtml(suggestion.description) + '</span>');
       btn.on('click', function() {
-        applyPipelineSuggestion(suggestion);
+        applyPresetSuggestion(suggestion);
       });
       container.append(btn);
     });
 
     // Update subtitle showing step count
-    const stepCount = state.pipelineSteps.length;
+    const stepCount = state.presetSteps.length;
     if (stepCount > 0) {
-      $('#pipelineSubtitle').html('Step ' + (stepCount + 1) + ' &mdash; ' + stepCount + ' step' + (stepCount > 1 ? 's' : '') + ' applied');
+      $('#presetSubtitle').html('Step ' + (stepCount + 1) + ' &mdash; ' + stepCount + ' step' + (stepCount > 1 ? 's' : '') + ' applied');
     } else {
-      $('#pipelineSubtitle').text('Click a suggestion to apply it');
+      $('#presetSubtitle').text('Click a suggestion to apply it');
     }
 
-    $('#pipelineGroup').show();
+    $('#presetGroup').show();
   }
 
   /**
-   * Apply a pipeline suggestion by merging its filters with current filters
-   * @param {Object} suggestion - Suggestion object with filters to apply
+   * Apply a preset suggestion by sending its preset ID to the API
+   * @param {Object} suggestion - Suggestion object with id and label
    */
-  function applyPipelineSuggestion(suggestion) {
-    // Record this step in pipeline history
-    state.pipelineSteps.push({ id: suggestion.id, label: suggestion.label });
+  function applyPresetSuggestion(suggestion) {
+    // Accumulate preset steps — each step is a separate preset filter in the chain
+    state.presetSteps.push({ id: suggestion.id, label: suggestion.label });
 
-    // Merge suggestion filters into current state filters
-    const sf = suggestion.filters || {};
-    Object.keys(sf).forEach(function(key) {
-      const existing = state.filters[key] || [];
-      const incoming = sf[key] || [];
-      // Merge without duplicates using Set for O(n) performance
-      state.filters[key] = Array.from(new Set(existing.concat(incoming)));
-    });
-
-    // Reflect the merged filters back into the UI checkboxes
-    syncFiltersToUI(suggestion.filters);
-
-    // Reset to page 1 and reload
+    // Reset to page 1 and reload using the full chain
     state.currentPage = 1;
     loadLogs();
   }
 
   /**
    * Sync a filters object back into the checkbox UI.
-   * Used after programmatically applying a pipeline suggestion.
+   * Used after programmatically applying a preset suggestion.
    * @param {Object} filters - Filters to reflect in the UI
    */
   function syncFiltersToUI(filters) {
@@ -221,9 +210,6 @@
   function renderFilterOptions() {
     const options = state.filterOptions;
 
-    // Render presets
-    renderPresets();
-
     // Render checkboxes for each filter type
     renderCheckboxes('timeBucket', options.timeBuckets || [], false); // Time: single column
     renderCheckboxes('filenameInclude', options.filenames || [], true);
@@ -241,19 +227,6 @@
     const showAdvanced = options.totalLogs > 200;
     $('#componentFilterGroup').toggle(showAdvanced);
     $('#threadFilterGroup').toggle(showAdvanced);
-  }
-
-  /**
-   * Render presets dropdown
-   */
-  function renderPresets() {
-    const presetSelect = $('#presetFilter');
-    presetSelect.empty();
-    presetSelect.append('<option value="">-- No Preset --</option>');
-    
-    state.presets.forEach(function(preset) {
-      presetSelect.append('<option value="' + preset.name + '">' + preset.description + '</option>');
-    });
   }
 
   /**
@@ -275,7 +248,7 @@
       let value, count;
       if (typeof item === 'object') {
         value = item.filename || item.log_level || item.thread_name ||
-                item.device_id || item.component_name || item.time_bucket || '';
+                item.device_id || item.component_name || item.time_label || '';
         count = item.count || 0;
       } else {
         value = item;
@@ -304,101 +277,6 @@
       values.push($(this).val());
     });
     return values;
-  }
-
-  /**
-   * On preset change
-   */
-  function onPresetChange() {
-    const presetName = $('#presetFilter').val();
-    if (!presetName) {
-      return;
-    }
-
-    // Find the preset
-    const preset = state.presets.find(p => p.name === presetName);
-    if (!preset) {
-      return;
-    }
-
-    // Clear all filters first
-    clearFiltersUI();
-
-    // Apply preset filters
-    if (preset.filters) {
-      // Apply logLevelInclude
-      if (preset.filters.logLevelInclude) {
-        preset.filters.logLevelInclude.forEach(function(level) {
-          $('.logLevelInclude-checkbox').each(function() {
-            if ($(this).val() === level) {
-              $(this).prop('checked', true);
-            }
-          });
-        });
-      }
-
-      // Apply threadExclude
-      if (preset.filters.threadExclude) {
-        preset.filters.threadExclude.forEach(function(thread) {
-          $('.threadExclude-checkbox').each(function() {
-            if ($(this).val() === thread) {
-              $(this).prop('checked', true);
-            }
-          });
-        });
-      }
-
-      // Apply componentInclude
-      if (preset.filters.componentInclude) {
-        preset.filters.componentInclude.forEach(function(component) {
-          $('.componentInclude-checkbox').each(function() {
-            if ($(this).val() === component) {
-              $(this).prop('checked', true);
-            }
-          });
-        });
-      }
-
-      // Apply filenameExclude
-      if (preset.filters.filenameExclude) {
-        preset.filters.filenameExclude.forEach(function(filename) {
-          $('.filenameExclude-checkbox').each(function() {
-            const checkboxValue = $(this).val();
-            // Support wildcard matching
-            if (filename.includes('*')) {
-              const pattern = filename.replace(/\*/g, '.*');
-              const regex = new RegExp('^' + pattern + '$');
-              if (regex.test(checkboxValue)) {
-                $(this).prop('checked', true);
-              }
-            } else if (checkboxValue === filename) {
-              $(this).prop('checked', true);
-            }
-          });
-        });
-      }
-
-      // Apply deviceInclude
-      if (preset.filters.deviceInclude) {
-        preset.filters.deviceInclude.forEach(function(device) {
-          $('.deviceInclude-checkbox').each(function() {
-            if ($(this).val() === device) {
-              $(this).prop('checked', true);
-            }
-          });
-        });
-      }
-    }
-
-    // Update select all checkboxes
-    updateSelectAll('logLevelInclude');
-    updateSelectAll('threadExclude');
-    updateSelectAll('componentInclude');
-    updateSelectAll('filenameExclude');
-    updateSelectAll('deviceInclude');
-
-    // Auto-apply filters
-    applyFilters();
   }
 
   /**
@@ -478,27 +356,37 @@
   function clearFilters() {
     state.filters = {};
     state.currentPage = 1;
-    state.pipelineSteps = [];
+    state.presetSteps = [];
     state.activeFilterStep = 0;
 
     // Clear UI
     clearFiltersUI();
-    $('#presetFilter').val('');
 
     loadLogs();
   }
 
   /**
    * Load logs
+   * Uses /filter_log for all cases (single or multi-step)
    */
   function loadLogs() {
+    // Build steps array: preset steps + manual filters
+    const steps = state.presetSteps.map(function(s) {
+      return { filters: { preset: s.id } };
+    });
+    const hasManualFilters = state.filters && Object.keys(state.filters).some(function(k) {
+      const v = state.filters[k];
+      return v !== '' && v !== 0 && v !== null && v !== undefined && !(Array.isArray(v) && v.length === 0);
+    });
+    if (steps.length === 0 || hasManualFilters) {
+      steps.push({ filters: state.filters });
+    }
     $.ajax({
       url: API_BASE + '/filter_log',
       method: 'POST',
       contentType: 'application/json',
       data: JSON.stringify({
-        folderPath: state.folderPath,
-        filters: state.filters,
+        steps: steps,
         page: state.currentPage,
         pageSize: state.pageSize
       }),
@@ -506,8 +394,7 @@
         if (response.success) {
           state.total = response.total;
           state.totalPages = response.totalPages;
-          // Step 1 output table is filter_1 (auto-generated by filterLogs)
-          state.activeFilterStep = 1;
+          state.activeFilterStep = steps.length;
           renderLogs(response.logs);
           updatePagination();
           loadFilterOptions();
