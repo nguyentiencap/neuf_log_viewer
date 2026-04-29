@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node neuf-log-viewer-api.js",
     "api": "node neuf-log-viewer-api.js",
-    "cli": "node neuf-log-viewer-cli.js"
+    "cli": "node neuf-log-viewer-cli.js",
+    "test": "node test/pipeline.test.js && node test/log-parser.test.js && node test/database-filter.test.js && node test/neuf-log-service.test.js"
   },
   "keywords": ["log", "viewer", "neuf", "sqlite"],
   "author": "",

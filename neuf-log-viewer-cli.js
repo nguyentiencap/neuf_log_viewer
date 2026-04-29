@@ -553,7 +553,7 @@ async function handleFilter(folderPath, args) {
     const format = parseOutputFormat(args);
 
     // Filter logs (loadDatabase will check if DB exists)
-    const steps = [{ filters, inputTable: 'logs', outputTable: 'filter_step_1' }];
+    const steps = [{ filters }];
     const result = await logService.filterLogs(folderPath, steps, pagination);
     displayFilterResults(result, format);
 

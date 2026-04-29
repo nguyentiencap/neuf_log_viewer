@@ -244,6 +244,52 @@ async function runAllTests() {
     return assertEqual(count, 2, 'contextLines=0 should match only the 2 rows containing "Connection"');
   });
 
+  runTest('contextLines=2: matches at IDs 10 and 17 produce 10 rows total', () => {
+    // Build 20 rows, match keyword "TARGET" at positions 10 and 17 (1-based IDs)
+    const rows = Array.from({ length: 20 }, (_, i) => ({
+      filename: 'app.log',
+      timestamp: `2026.04.28 09:${String(i).padStart(2, '0')}:00.000`,
+      threadName: 'main',
+      deviceId: 'DEV001',
+      componentName: 'com.example',
+      logLevel: 'INFO',
+      message: (i === 9 || i === 16) ? 'TARGET message' : `Normal message ${i}`
+    }));
+    const svc = buildDatabaseService(SQL, rows);
+    // IDs 10 and 17 are matches (1-based autoincrement)
+    // contextLines=2: range [8..12] + [15..19], minus matches already in Step 1
+    // Total = 2 matches + 8 context = 10 rows
+    const { count } = svc.executeFilterStep(
+      { search: 'TARGET', contextLines: 2 },
+      'logs',
+      'filter_step_1'
+    );
+    return assertEqual(count, 10, 'contextLines=2 with matches at IDs 10,17 should produce 10 rows');
+  });
+
+  runTest('contextLines=2: overlapping ranges (matches at IDs 10 and 12) deduplicate correctly', () => {
+    // Build 20 rows, match at positions 10 and 12 (1-based IDs)
+    const rows = Array.from({ length: 20 }, (_, i) => ({
+      filename: 'app.log',
+      timestamp: `2026.04.28 09:${String(i).padStart(2, '0')}:00.000`,
+      threadName: 'main',
+      deviceId: 'DEV001',
+      componentName: 'com.example',
+      logLevel: 'INFO',
+      message: (i === 9 || i === 11) ? 'TARGET message' : `Normal message ${i}`
+    }));
+    const svc = buildDatabaseService(SQL, rows);
+    // match IDs 10 and 12, contextLines=2
+    // range for 10: [8..14], range for 12: [10..14]
+    // union: [8..14] = 7 rows (8,9,10,11,12,13,14), no gap between ranges
+    const { count } = svc.executeFilterStep(
+      { search: 'TARGET', contextLines: 2 },
+      'logs',
+      'filter_step_1'
+    );
+    return assertEqual(count, 7, 'overlapping contextLines ranges should be deduplicated to 7 rows');
+  });
+
   runTest('contextLines with other filters: context expands over all inputTable rows regardless of other filters', () => {
     const svc = buildDatabaseService(SQL, SEED_LOGS);
     // Seed order by timestamp: 0=app/ERR(Connection failed), 1=app/WARN(Retrying), 2=app/INFO(Request received),
@@ -259,6 +305,70 @@ async function runAllTests() {
       'filter_step_1'
     );
     return assertEqual(count, 5, 'context expands over all rows in inputTable, not bounded by non-search filters');
+  });
+
+  // --------------------------------------------------------------------------
+  printSection('executeFilterStep: regex search');
+  // --------------------------------------------------------------------------
+
+  runTest('searchRegex: basic pattern matches correctly', () => {
+    const svc = buildDatabaseService(SQL, SEED_LOGS);
+    const { count } = svc.executeFilterStep(
+      { search: 'conn.*failed', searchRegex: true },
+      'logs',
+      'filter_step_1'
+    );
+    return assertEqual(count, 1, 'pattern "conn.*failed" should match 1 row');
+  });
+
+  runTest('searchRegex: alternation pattern (|) matches multiple rows', () => {
+    const svc = buildDatabaseService(SQL, SEED_LOGS);
+    const { count } = svc.executeFilterStep(
+      { search: 'Connection failed|startup', searchRegex: true },
+      'logs',
+      'filter_step_1'
+    );
+    return assertEqual(count, 2, 'pattern "Connection failed|startup" should match 2 rows');
+  });
+
+  runTest('searchRegex: case-insensitive by default (uppercase pattern matches lowercase message)', () => {
+    const svc = buildDatabaseService(SQL, SEED_LOGS);
+    const { count } = svc.executeFilterStep(
+      { search: 'CONNECTION FAILED', searchRegex: true },
+      'logs',
+      'filter_step_1'
+    );
+    return assertEqual(count, 1, 'pattern "CONNECTION FAILED" should match case-insensitively');
+  });
+
+  runTest('searchRegex: anchor ^ matches start of message', () => {
+    const svc = buildDatabaseService(SQL, SEED_LOGS);
+    const { count } = svc.executeFilterStep(
+      { search: '^System', searchRegex: true },
+      'logs',
+      'filter_step_1'
+    );
+    return assertEqual(count, 1, 'pattern "^System" should match only "System startup"');
+  });
+
+  runTest('searchRegex: invalid pattern returns 0 rows without throwing', () => {
+    const svc = buildDatabaseService(SQL, SEED_LOGS);
+    const { count } = svc.executeFilterStep(
+      { search: '[invalid(regex', searchRegex: true },
+      'logs',
+      'filter_step_1'
+    );
+    return assertEqual(count, 0, 'invalid regex pattern should return 0 rows');
+  });
+
+  runTest('searchRegex: false falls back to LIKE search', () => {
+    const svc = buildDatabaseService(SQL, SEED_LOGS);
+    const { count } = svc.executeFilterStep(
+      { search: 'Connection', searchRegex: false },
+      'logs',
+      'filter_step_1'
+    );
+    return assertEqual(count, 2, 'LIKE search for "Connection" should match 2 rows');
   });
 
   printSummary('FILTER CHAIN TEST SUITE');
