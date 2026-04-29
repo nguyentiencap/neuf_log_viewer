@@ -165,153 +165,6 @@ runTest('getTimeBucket: Null input', () => {
 });
 
 // ============================================================================
-// Test parseLogEntry
-// ============================================================================
-printSection('Testing parseLogEntry()');
-
-runTest('parseLogEntry: Complete log entry with all fields', () => {
-  const line = '2026.04.08 14:30:45.123 [INFO] class com.example.MyClass: Thread-1: <Device123> (com.example.package.Component) Test message';
-  const result = parser.parseLogEntry(line);
-  const expected = {
-    timestamp: '2026.04.08 14:30:45.123',
-    logLevel: 'INFO',
-    className: 'class com.example.MyClass',
-    threadName: 'Thread-1',
-    deviceId: 'Device123',
-    componentName: 'com.example.package',
-    message: 'Test message',
-    rawLine: line
-  };
-  return assertEqual(result, expected,
-    'Should parse complete log entry with all fields');
-});
-
-runTest('parseLogEntry: Log entry without class name', () => {
-  const line = '2026.04.08 14:30:45.123 [INFO] Thread-1: <Device123> (com.example.Component) Test message';
-  const result = parser.parseLogEntry(line);
-  const expected = {
-    timestamp: '2026.04.08 14:30:45.123',
-    logLevel: 'INFO',
-    className: null,
-    threadName: 'Thread-1',
-    deviceId: 'Device123',
-    componentName: 'com.example',
-    message: 'Test message',
-    rawLine: line
-  };
-  return assertEqual(result, expected, 
-    'Should parse log entry without class name');
-});
-
-runTest('parseLogEntry: Log entry without device ID', () => {
-  const line = '2026.04.08 14:30:45.123 [INFO] Thread-1: (com.example.Component) Test message';
-  const result = parser.parseLogEntry(line);
-  const expected = {
-    timestamp: '2026.04.08 14:30:45.123',
-    logLevel: 'INFO',
-    className: null,
-    threadName: 'Thread-1',
-    deviceId: null,
-    componentName: 'com.example',
-    message: 'Test message',
-    rawLine: line
-  };
-  return assertEqual(result, expected, 
-    'Should parse log entry without device ID');
-});
-
-runTest('parseLogEntry: Log entry without component name', () => {
-  const line = '2026.04.08 14:30:45.123 [INFO] Thread-1: <Device123> Test message';
-  const result = parser.parseLogEntry(line);
-  const expected = {
-    timestamp: '2026.04.08 14:30:45.123',
-    logLevel: 'INFO',
-    className: null,
-    threadName: 'Thread-1',
-    deviceId: 'Device123',
-    componentName: null,
-    message: 'Test message',
-    rawLine: line
-  };
-  return assertEqual(result, expected, 
-    'Should parse log entry without component name');
-});
-
-runTest('parseLogEntry: Minimal log entry', () => {
-  const line = '2026.04.08 14:30:45.123 [INFO] Thread-1: Test message';
-  const result = parser.parseLogEntry(line);
-  const expected = {
-    timestamp: '2026.04.08 14:30:45.123',
-    logLevel: 'INFO',
-    className: null,
-    threadName: 'Thread-1',
-    deviceId: null,
-    componentName: null,
-    message: 'Test message',
-    rawLine: line
-  };
-  return assertEqual(result, expected, 
-    'Should parse minimal log entry');
-});
-
-runTest('parseLogEntry: Component name without dots (java:133)', () => {
-  const line = '2026.04.08 14:30:45.123 [INFO] Thread-1: (java:133) Test message';
-  const result = parser.parseLogEntry(line);
-  const expected = {
-    timestamp: '2026.04.08 14:30:45.123',
-    logLevel: 'INFO',
-    className: null,
-    threadName: 'Thread-1',
-    deviceId: null,
-    componentName: 'java:133',
-    message: 'Test message',
-    rawLine: line
-  };
-  return assertEqual(result, expected, 
-    'Should handle component name without dots');
-});
-
-runTest('parseLogEntry: Different log levels', () => {
-  const levels = ['DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL'];
-  let allPassed = true;
-  
-  levels.forEach(level => {
-    const line = `2026.04.08 14:30:45.123 [${level}] Thread-1: Test message`;
-    const result = parser.parseLogEntry(line);
-    if (result.logLevel !== level) {
-      console.error(`  Failed for level: ${level}`);
-      allPassed = false;
-    }
-  });
-  
-  if (allPassed) {
-    console.log(`✅ PASSED: Should parse all log levels correctly`);
-  }
-  return allPassed;
-});
-
-runTest('parseLogEntry: Invalid format - no timestamp', () => {
-  const line = '[INFO] Thread-1: Test message';
-  const result = parser.parseLogEntry(line);
-  return assertEqual(result, null, 
-    'Should return null for invalid format (no timestamp)');
-});
-
-runTest('parseLogEntry: Invalid format - no log level', () => {
-  const line = '2026.04.08 14:30:45.123 Thread-1: Test message';
-  const result = parser.parseLogEntry(line);
-  return assertEqual(result, null, 
-    'Should return null for invalid format (no log level)');
-});
-
-runTest('parseLogEntry: Invalid format - no thread name', () => {
-  const line = '2026.04.08 14:30:45.123 [INFO] Test message';
-  const result = parser.parseLogEntry(line);
-  return assertEqual(result, null, 
-    'Should return null for invalid format (no thread name)');
-});
-
-// ============================================================================
 // Test formatLogEntry
 // ============================================================================
 printSection('Testing formatLogEntry()');
@@ -385,13 +238,14 @@ runTest('formatLogEntry: Minimal log object', () => {
 // ============================================================================
 printSection('Testing parsePhase1Line()');
 
-runTest('parsePhase1Line: Valid log line returns timestamp and rawContent', () => {
+runTest('parsePhase1Line: Valid log line returns timestamp, rawContent and timeBucket', () => {
   const line = '2026.04.08 14:30:45.123 [INFO] Thread-1: <Device> (com.example.Class) Test message';
   const result = parser.parsePhase1Line(line);
   return assertEqual(result, {
     timestamp: '2026.04.08 14:30:45.123',
-    rawContent: '[INFO] Thread-1: <Device> (com.example.Class) Test message'
-  }, 'Should extract timestamp and rawContent from valid log line');
+    rawContent: '[INFO] Thread-1: <Device> (com.example.Class) Test message',
+    timeBucket: Math.floor(Date.UTC(2026, 3, 8, 14, 30, 0) / 1000)
+  }, 'Should extract timestamp, rawContent and timeBucket from valid log line');
 });
 
 runTest('parsePhase1Line: Continuation line returns null', () => {
@@ -415,9 +269,11 @@ runTest('parsePhase1Line: Minimal log line (timestamp + level + thread + message
   const result = parser.parsePhase1Line(line);
   return assertEqual(result, {
     timestamp: '2026.04.08 14:30:45.123',
-    rawContent: '[WARN] main: Something happened'
+    rawContent: '[WARN] main: Something happened',
+    timeBucket: Math.floor(Date.UTC(2026, 3, 8, 14, 30, 0) / 1000)
   }, 'Should parse minimal log line');
 });
+
 
 // ============================================================================
 // Test parsePhase2Entry
@@ -428,48 +284,54 @@ runTest('parsePhase2Entry: Full entry with all fields', () => {
   const rawEntry = {
     filename: 'NEUF-test.log',
     timestamp: '2026.04.08 14:30:45.123',
+    timeBucket: Math.floor(Date.UTC(2026, 3, 8, 14, 30, 0) / 1000),
     rawContent: '[INFO] class com.example.MyClass: Thread-1: <Device123> (com.example.package.Component) Test message'
   };
   const result = parser.parsePhase2Entry(rawEntry);
   return assertEqual(result, {
     filename: 'NEUF-test.log',
     timestamp: '2026.04.08 14:30:45.123',
+    timeBucket: Math.floor(Date.UTC(2026, 3, 8, 14, 30, 0) / 1000),
     logLevel: 'INFO',
     threadName: 'Thread',
     deviceId: 'Device123',
     componentName: 'com.example.package',
     message: 'Test message'
-  }, 'Should parse full entry with all fields (threadName normalized)');
+  }, 'Should parse full entry with all fields');
 });
 
 runTest('parsePhase2Entry: Entry without class name', () => {
   const rawEntry = {
     filename: 'NEUF-test.log',
     timestamp: '2026.04.08 14:30:45.123',
+    timeBucket: Math.floor(Date.UTC(2026, 3, 8, 14, 30, 0) / 1000),
     rawContent: '[INFO] Thread-1: <Device123> (com.example.Component) Test message'
   };
   const result = parser.parsePhase2Entry(rawEntry);
   return assertEqual(result, {
     filename: 'NEUF-test.log',
     timestamp: '2026.04.08 14:30:45.123',
+    timeBucket: Math.floor(Date.UTC(2026, 3, 8, 14, 30, 0) / 1000),
     logLevel: 'INFO',
     threadName: 'Thread',
     deviceId: 'Device123',
     componentName: 'com.example',
     message: 'Test message'
-  }, 'Should parse entry without class name (threadName normalized)');
+  }, 'Should parse entry without class name');
 });
 
 runTest('parsePhase2Entry: Entry without deviceId and componentName', () => {
   const rawEntry = {
     filename: 'NEUF-test.log',
     timestamp: '2026.04.08 14:30:45.123',
+    timeBucket: Math.floor(Date.UTC(2026, 3, 8, 14, 30, 0) / 1000),
     rawContent: '[WARN] MainThread: Simple warning'
   };
   const result = parser.parsePhase2Entry(rawEntry);
   return assertEqual(result, {
     filename: 'NEUF-test.log',
     timestamp: '2026.04.08 14:30:45.123',
+    timeBucket: Math.floor(Date.UTC(2026, 3, 8, 14, 30, 0) / 1000),
     logLevel: 'WARN',
     threadName: 'MainThread',
     deviceId: null,
@@ -482,6 +344,7 @@ runTest('parsePhase2Entry: Multi-line entry preserves continuation lines in mess
   const rawEntry = {
     filename: 'NEUF-test.log',
     timestamp: '2026.04.08 14:30:45.123',
+    timeBucket: Math.floor(Date.UTC(2026, 3, 8, 14, 30, 0) / 1000),
     rawContent: '[ERROR] Thread-1: Exception occurred\n  at com.example.Class.method(Class.java:42)\n  at com.example.Main.run(Main.java:10)'
   };
   const result = parser.parsePhase2Entry(rawEntry);
@@ -494,6 +357,7 @@ runTest('parsePhase2Entry: Invalid rawContent (no log level) returns null', () =
   const rawEntry = {
     filename: 'NEUF-test.log',
     timestamp: '2026.04.08 14:30:45.123',
+    timeBucket: Math.floor(Date.UTC(2026, 3, 8, 14, 30, 0) / 1000),
     rawContent: 'This is not a valid log entry'
   };
   const result = parser.parsePhase2Entry(rawEntry);
@@ -504,6 +368,7 @@ runTest('parsePhase2Entry: Thread name is normalized (removes trailing number)',
   const rawEntry = {
     filename: 'NEUF-test.log',
     timestamp: '2026.04.08 14:30:45.123',
+    timeBucket: Math.floor(Date.UTC(2026, 3, 8, 14, 30, 0) / 1000),
     rawContent: '[INFO] Worker-Thread-42: Task completed'
   };
   const result = parser.parsePhase2Entry(rawEntry);

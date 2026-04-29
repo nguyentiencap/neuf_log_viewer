@@ -374,10 +374,11 @@ printSection('Testing Service Integration');
 
 runTest('Service: parserService is properly injected', () => {
   const hasGetTimeBucket = typeof logService.parserService.getTimeBucket === 'function';
-  const hasParseLogEntry = typeof logService.parserService.parseLogEntry === 'function';
-  
-  const allMethodsPresent = hasGetTimeBucket && hasParseLogEntry;
-  
+  const hasParsePhase1Line = typeof logService.parserService.parsePhase1Line === 'function';
+  const hasParsePhase2Entry = typeof logService.parserService.parsePhase2Entry === 'function';
+
+  const allMethodsPresent = hasGetTimeBucket && hasParsePhase1Line && hasParsePhase2Entry;
+
   return assertEqual(allMethodsPresent, true,
     'ParserService should be properly injected with required methods');
 });
