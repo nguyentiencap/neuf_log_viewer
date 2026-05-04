@@ -14,6 +14,7 @@
     total: 0,
     folderPath: './logs',
     filters: {},
+    inputTable: null,
     filterOptions: {},
     presetSteps: [],    // history of applied preset suggestions
     activeFilterStep: 0   // step number to query filter options from (0 = logs, N = filter_N)
@@ -72,8 +73,7 @@
    * Load filter options
    */
   function loadFilterOptions() {
-    // In chain mode, stepNumber already points to the correct temp table — no need to send manual filters
-    const filtersPayload = state.presetSteps.length > 0 ? {} : state.filters;
+    const filtersPayload = buildRequestFilters();
     $.ajax({
       url: API_BASE + '/filter_option',
       method: 'POST',
@@ -81,7 +81,7 @@
       data: JSON.stringify({
         folderPath: state.folderPath,
         filters: filtersPayload,
-        stepNumber: state.activeFilterStep
+        inputTable: state.inputTable
       }),
       success: function(response) {
         if (response.success) {
@@ -101,13 +101,15 @@
    * Load preset suggestions based on current filters
    */
   function loadPresetSuggestions() {
-    // In chain mode, stepNumber already points to the correct temp table — no need to send manual filters
-    const filtersPayload = state.presetSteps.length > 0 ? {} : state.filters;
+    const filtersPayload = buildRequestFilters();
     $.ajax({
       url: API_BASE + '/preset_suggestions',
       method: 'POST',
       contentType: 'application/json',
-      data: JSON.stringify({ filters: filtersPayload, stepNumber: state.activeFilterStep }),
+      data: JSON.stringify({
+        filters: filtersPayload,
+        inputTable: state.inputTable
+      }),
       success: function(response) {
         if (response.success) {
           renderPresetSuggestions(response.suggestions || []);
@@ -358,6 +360,7 @@
     state.currentPage = 1;
     state.presetSteps = [];
     state.activeFilterStep = 0;
+    state.inputTable = null;
 
     // Clear UI
     clearFiltersUI();
@@ -367,34 +370,27 @@
 
   /**
    * Load logs
-   * Uses /filter_log for all cases (single or multi-step)
+   * Uses /filter_log with direct filters payload
    */
   function loadLogs() {
-    // Build steps array: preset steps + manual filters
-    const steps = state.presetSteps.map(function(s) {
-      return { filters: { preset: s.id } };
-    });
-    const hasManualFilters = state.filters && Object.keys(state.filters).some(function(k) {
-      const v = state.filters[k];
-      return v !== '' && v !== 0 && v !== null && v !== undefined && !(Array.isArray(v) && v.length === 0);
-    });
-    if (steps.length === 0 || hasManualFilters) {
-      steps.push({ filters: state.filters });
-    }
+    const requestFilters = buildRequestFilters();
+
     $.ajax({
       url: API_BASE + '/filter_log',
       method: 'POST',
       contentType: 'application/json',
       data: JSON.stringify({
-        steps: steps,
+        filters: requestFilters,
         page: state.currentPage,
-        pageSize: state.pageSize
+        pageSize: state.pageSize,
+        inputTable: state.inputTable
       }),
       success: function(response) {
         if (response.success) {
           state.total = response.total;
           state.totalPages = response.totalPages;
-          state.activeFilterStep = steps.length;
+          state.inputTable = response.outputTable || null;
+          state.activeFilterStep = 1;
           renderLogs(response.logs);
           updatePagination();
           loadFilterOptions();
@@ -407,6 +403,23 @@
         showStatus('❌ Failed to load logs: ' + error, 'error');
       }
     });
+  }
+
+  /**
+   * Build API filters payload from current manual filters and preset chain.
+   * @returns {Object} filters payload
+   */
+  function buildRequestFilters() {
+    const requestFilters = Object.assign({}, state.filters);
+    const presetIds = state.presetSteps.map(function(step) { return step.id; }).filter(Boolean);
+
+    if (presetIds.length > 0) {
+      requestFilters.preset = presetIds;
+    } else {
+      delete requestFilters.preset;
+    }
+
+    return requestFilters;
   }
 
   /**

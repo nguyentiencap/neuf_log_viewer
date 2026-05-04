@@ -6,8 +6,6 @@
 const fs = require('fs');
 const path = require('path');
 const { NEUFLogService } = require('../lib/neuf-log-service');
-const { FilterService } = require('../lib/filters');
-const { logParserService } = require('../lib/log-parser');
 const { assertEqual, runTest, printSection, printSummary } = require('./test-helpers');
 
 // Test directory setup
@@ -18,8 +16,7 @@ const TEST_LOG_DIR = path.join(TEST_DIR, 'sample-logs');
 const mockLogger = () => {};
 
 // Initialize services
-const filterService = new FilterService();
-const logService = new NEUFLogService(logParserService, mockLogger);
+const logService = new NEUFLogService(mockLogger);
 
 printSection('NEUF LOG SERVICE TEST SUITE');
 
@@ -223,7 +220,7 @@ printSection('Testing Service Constructor');
 
 runTest('Constructor: Accepts parserService and logger', () => {
   const customLogger = (msg) => console.log(`CUSTOM: ${msg}`);
-  const service = new NEUFLogService(logParserService, customLogger);
+  const service = new NEUFLogService(customLogger);
   
   const hasParserService = service.parserService !== undefined;
   const hasLogger = service.logger !== undefined;
@@ -240,7 +237,7 @@ runTest('Constructor: Accepts parserService and logger', () => {
 });
 
 runTest('Constructor: Uses default console.log logger when not provided', () => {
-  const service = new NEUFLogService(logParserService);
+  const service = new NEUFLogService();
   
   const hasLogger = service.logger !== undefined;
   const isFunction = typeof service.logger === 'function';
@@ -389,8 +386,8 @@ runTest('Service: parserService is properly injected', () => {
 printSection('Testing Stateless Design');
 
 runTest('Service: No instance state stored between operations', () => {
-  const service1 = new NEUFLogService(logParserService, mockLogger);
-  const service2 = new NEUFLogService(logParserService, mockLogger);
+  const service1 = new NEUFLogService(mockLogger);
+  const service2 = new NEUFLogService(mockLogger);
   
   // Both services should work independently
   const path1 = service1.getDbPath('/test/path1');
@@ -503,7 +500,7 @@ runTest('filterLogs: Returns all logs with empty filters', async () => {
     testPaths = await createTestDatabase();
     const { testFolder } = testPaths;
     
-    const result = await logService.filterLogs(testFolder, [{ filters: {}, inputTable: 'logs', outputTable: 'filter_step_1' }], { page: 1, pageSize: 100 });
+    const result = await logService.filterLogs(testFolder, [{ filters: {}, inputTable: 'logs', inputTable: 'filter_step_1' }], { page: 1, pageSize: 100 });
 
     const hasSuccess = result.success === true;
     const hasLogs = Array.isArray(result.logs);
@@ -543,7 +540,7 @@ runTest('filterLogs: Filters by log level', async () => {
     const { testFolder } = testPaths;
     
     const filters = { logLevelInclude: ['ERROR'] };
-    const result = await logService.filterLogs(testFolder, [{ filters, inputTable: 'logs', outputTable: 'filter_step_1' }], { page: 1, pageSize: 100 });
+    const result = await logService.filterLogs(testFolder, [{ filters, inputTable: 'logs', inputTable: 'filter_step_1' }], { page: 1, pageSize: 100 });
 
     const hasOnlyErrorLogs = result.logs.every(log => log.log_level === 'ERROR');
     const correctCount = result.logs.length === 1;
@@ -575,7 +572,7 @@ runTest('filterLogs: Filters by device ID', async () => {
     const { testFolder } = testPaths;
     
     const filters = { deviceInclude: ['Device001'] };
-    const result = await logService.filterLogs(testFolder, [{ filters, inputTable: 'logs', outputTable: 'filter_step_1' }], { page: 1, pageSize: 100 });
+    const result = await logService.filterLogs(testFolder, [{ filters, inputTable: 'logs', inputTable: 'filter_step_1' }], { page: 1, pageSize: 100 });
 
     const hasOnlyDevice001 = result.logs.every(log => log.device_id === 'Device001');
     const correctCount = result.logs.length === 3; // 3 logs with Device001
@@ -607,9 +604,9 @@ runTest('filterLogs: Pagination works correctly', async () => {
     const { testFolder } = testPaths;
     
     // Get first page with 2 items
-    const result1 = await logService.filterLogs(testFolder, [{ filters: {}, inputTable: 'logs', outputTable: 'filter_step_1' }], { page: 1, pageSize: 2 });
+    const result1 = await logService.filterLogs(testFolder, [{ filters: {}, inputTable: 'logs', inputTable: 'filter_step_1' }], { page: 1, pageSize: 2 });
     // Get second page with 2 items
-    const result2 = await logService.filterLogs(testFolder, [{ filters: {}, inputTable: 'logs', outputTable: 'filter_step_1' }], { page: 2, pageSize: 2 });
+    const result2 = await logService.filterLogs(testFolder, [{ filters: {}, inputTable: 'logs', inputTable: 'filter_step_1' }], { page: 2, pageSize: 2 });
 
     const page1HasTwoLogs = result1.logs.length === 2;
     const page2HasTwoLogs = result2.logs.length === 2;
@@ -644,7 +641,7 @@ runTest('getFilterOptions: Returns available filter options', async () => {
     testPaths = await createTestDatabase();
     const { testFolder } = testPaths;
     
-    const result = await logService.getFilterOptions(testFolder, {}, true);
+    const result = await logService.getFilterOptions(testFolder, );
     
     const hasSuccess = result.success === true;
     const hasData = result.data !== undefined;
@@ -685,7 +682,7 @@ runTest('getFilterOptions: Returns correct log levels from data', async () => {
     testPaths = await createTestDatabase();
     const { testFolder } = testPaths;
     
-    const result = await logService.getFilterOptions(testFolder, {}, true);
+    const result = await logService.getFilterOptions(testFolder, );
     
     const logLevels = result.data.logLevels;
     const hasInfo = logLevels.some(l => l.value === 'INFO');
@@ -721,7 +718,7 @@ runTest('getFilterOptions: Returns correct device IDs from data', async () => {
     testPaths = await createTestDatabase();
     const { testFolder } = testPaths;
     
-    const result = await logService.getFilterOptions(testFolder, {}, true);
+    const result = await logService.getFilterOptions(testFolder, );
     
     const deviceIds = result.data.deviceIds;
     const hasDevice001 = deviceIds.some(d => d.value === 'Device001');

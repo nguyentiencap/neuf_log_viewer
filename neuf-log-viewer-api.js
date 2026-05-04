@@ -15,9 +15,6 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const { NEUFLogService } = require('./lib/neuf-log-service');
-const { FilterService } = require('./lib/filters');
-const { PresetService } = require('./lib/preset');
-const { logParserService } = require('./lib/log-parser');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -74,8 +71,7 @@ app.use((req, res, next) => {
 });
 
 // Create shared services
-const filterService = new FilterService();
-const logService = new NEUFLogService(logParserService, console.log);
+const logService = new NEUFLogService(console.log);
 
 
 
@@ -110,8 +106,8 @@ function parseFiltersFromRequest(query) {
     preset: query.preset || ''
   };
   
-  // Normalize filters using shared logic from FilterService
-  return filterService.normalizeFilters(filters);
+  // Normalize filters using shared logic from NEUFLogService
+  return logService.normalizeFilters(filters);
 }
 
 
@@ -124,19 +120,18 @@ function parseFiltersFromRequest(query) {
  *     // Same as filter_log
  *   },
  *   limitedOptions: boolean (optional, default: true) - Limit thread_name and components to top 20,
- *   stepNumber: number (optional, default: 0) - Step whose output table to query options from (0 = logs)
+ *   inputTable: string (optional) - output table returned by /filter_log
  * }
  */
 app.post('/filter_option', async (req, res) => {
   try {
-    const { filters = {}, limitedOptions = true, stepNumber = 0 } = req.body;
+    const { filters = {}, limitedOptions = true, inputTable = null } = req.body;
 
     // Parse and normalize filters (API layer responsibility)
     const parsedFilters = parseFiltersFromRequest(filters);
 
     // Get filter options (loadDatabase will check if DB exists)
-    const result = await logService.getFilterOptions(FOLDER_PATH, parsedFilters, limitedOptions, stepNumber);
-
+    const result = await logService.getFilterOptions(FOLDER_PATH, inputTable, limitedOptions);
     res.json(result);
 
   } catch (error) {
@@ -157,7 +152,7 @@ app.post('/filter_option', async (req, res) => {
  *
  * Body: {
  *   filters: { ... }  - Currently applied filters (same shape as filter_log),
- *   stepNumber: number (optional, default: 0) - Step whose output table to query from (0 = logs)
+ *   outputTable: string (optional) - output table returned by /filter_log
  * }
  *
  * Response: {
@@ -169,29 +164,17 @@ app.post('/filter_option', async (req, res) => {
  */
 app.post('/preset_suggestions', async (req, res) => {
   try {
-    const { filters = {}, stepNumber = 0 } = req.body;
+    const { filters = {}, inputTable = null } = req.body;
 
     // Parse and normalize filters (API layer responsibility)
     const parsedFilters = parseFiltersFromRequest(filters);
 
-    // Resolve preset so getSuggestions knows what is already applied
-    await logService.applyPreset(FOLDER_PATH, parsedFilters);
+    // Resolve preset so suggestions are contextually aware of what is already applied
+    await logService.applyPreset(FOLDER_PATH, inputTable, parsedFilters);
 
-    // Standard limit (top 20 per category) is sufficient for all suggestion types:
-    // devices needs 2, components needs 10, threads needs 5, logLevels are always unlimited.
-    const result = await logService.getFilterOptions(FOLDER_PATH, parsedFilters, true, stepNumber);
+    const result = await logService.getPresetSuggestions(FOLDER_PATH, inputTable, parsedFilters);
 
-    if (!result.success) {
-      return res.json({ success: false, suggestions: [] });
-    }
-
-    // Generate suggestions from live filter option data
-    const suggestions = PresetService.getSuggestions(result.data, parsedFilters);
-
-    // Strip internal filters field — client only needs id, label, description
-    const clientSuggestions = suggestions.map(({ id, label, description }) => ({ id, label, description }));
-
-    res.json({ success: true, suggestions: clientSuggestions });
+    res.json(result);
 
   } catch (error) {
     console.error('❌ Preset suggestions error:', error);
@@ -202,16 +185,16 @@ app.post('/preset_suggestions', async (req, res) => {
 
 /**
  * POST /filter_log
- * Filter logs through a multi-step chain.
- * Table names are auto-generated: logs -> filter_1 -> filter_2 -> ...
+ * Filter logs with a single filters object.
  *
  * Body: {
- *   steps: [
- *     { filters: { logLevelInclude: ["ERROR"] } },
- *     { filters: { deviceInclude: ["DEV001"] } }
- *   ],
+ *   filters: {
+ *     logLevelInclude: ["ERROR"],
+ *     deviceInclude: ["DEV001"]
+ *   },
  *   page: number (default: 1),
  *   pageSize: number (default: 1000),
+ *   inputTable: string (optional) - for applying filters on a specific output table from previous steps
  *   raw: boolean (default: false)
  * }
  *
@@ -221,21 +204,21 @@ app.post('/preset_suggestions', async (req, res) => {
  *   total: number,
  *   page: number,
  *   pageSize: number,
- *   totalPages: number
+ *   totalPages: number,
+ *   outputTable: string
  * }
  */
 app.post('/filter_log', async (req, res) => {
   try {
-    const { steps = [], page = 1, pageSize = 1000, raw = false } = req.body;
+    const { filters = {}, steps = [], page = 1, pageSize = 1000, raw = false, inputTable = null } = req.body;
+    const legacyStep = steps[0] && steps[0].filters ? steps[0].filters : {};
+    const requestFilters = Object.keys(filters).length > 0 ? filters : legacyStep;
 
-    // Parse and normalize filters for each step (API layer responsibility)
-    const parsedSteps = await Promise.all(steps.map(async step => {
-      const parsedFilters = parseFiltersFromRequest(step.filters || {});
-      await logService.applyPreset(FOLDER_PATH, parsedFilters);
-      return { filters: parsedFilters };
-    }));
+    // Parse and normalize filters (API layer responsibility)
+    const parsedFilters = parseFiltersFromRequest(requestFilters);
+    await logService.applyPreset(FOLDER_PATH, inputTable, parsedFilters);
 
-    const result = await logService.filterLogs(FOLDER_PATH, parsedSteps, { page, pageSize });
+    const result = await logService.filterLogs(FOLDER_PATH, inputTable, parsedFilters, { page, pageSize });
 
     if (raw) {
       res.json(result);
@@ -245,7 +228,7 @@ app.post('/filter_log', async (req, res) => {
     // Format logs at API layer
     const formattedLogs = result.logs.map(log => ({
       ...log,
-      formattedLog: logParserService.formatLogEntry(log)
+      formattedLog: logService.formatLogEntry(log, "api")
     }));
 
     res.json({ ...result, logs: formattedLogs });

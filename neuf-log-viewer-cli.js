@@ -13,12 +13,9 @@
 
 const path = require('path');
 const { NEUFLogService } = require('./lib/neuf-log-service');
-const { FilterService } = require('./lib/filters');
-const { logParserService } = require('./lib/log-parser');
 
 // Create shared services
-const filterService = new FilterService();
-const logService = new NEUFLogService(logParserService, console.log);
+const logService = new NEUFLogService(console.log);
 
 /**
  * Parse comma-separated values into array
@@ -133,9 +130,8 @@ function parseFiltersFromArgs(args) {
         break;
     }
   }
-
-  // Normalize filters using FilterService
-  return filterService.normalizeFilters(filters);
+  // Normalize filters using NEUFLogService
+  return logService.normalizeFilters(filters);
 }
 
 /**
@@ -556,8 +552,7 @@ async function handleFilter(folderPath, args) {
     await logService.applyPreset(folderPath, filters);
 
     // Filter logs (loadDatabase will check if DB exists)
-    const steps = [{ filters }];
-    const result = await logService.filterLogs(folderPath, steps, pagination);
+    const result = await logService.filterLogs(folderPath, filters, pagination);
     displayFilterResults(result, format);
 
   } catch (error) {
