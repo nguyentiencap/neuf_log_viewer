@@ -153,15 +153,29 @@ async function runAllTests() {
     return assertEqual(step3.count, 1, 'Step 3 should have 1 row (app.log + ERROR + DEV002)');
   });
 
-  runTest('Output table is recreated when same outputTable name is reused', () => {
+  runTest('Output table is reused (cached) when same outputTable name is called again', () => {
     const svc = buildDatabaseService(SQL, SEED_LOGS);
 
-    // First run: filter ERROR (2 rows)
+    // First run: filter ERROR (2 rows) — creates the temp table
     svc.executeFilterStep({ logLevelInclude: ['ERROR'] }, 'logs', 'filter_step_1');
 
-    // Second run with same outputTable but different filter: INFO (2 rows)
+    // Second run with the SAME outputTable and the SAME filters — should return cached count
+    const result = svc.executeFilterStep({ logLevelInclude: ['ERROR'] }, 'logs', 'filter_step_1');
+    return assertEqual(result.count, 2, 'Should reuse cached temp table and return same count');
+  });
+
+  runTest('dropTempTable allows a cached table to be recreated with new filters', () => {
+    const svc = buildDatabaseService(SQL, SEED_LOGS);
+
+    // Create filter_step_1 with ERROR filter (2 rows)
+    svc.executeFilterStep({ logLevelInclude: ['ERROR'] }, 'logs', 'filter_step_1');
+
+    // Explicitly drop the cached table
+    svc.dropTempTable('filter_step_1');
+
+    // Re-create with INFO filter (2 rows) — should succeed after explicit drop
     const result = svc.executeFilterStep({ logLevelInclude: ['INFO'] }, 'logs', 'filter_step_1');
-    return assertEqual(result.count, 2, 'Should recreate output table with new filter result');
+    return assertEqual(result.count, 2, 'Should create new table after explicit drop');
   });
 
   // --------------------------------------------------------------------------
@@ -366,6 +380,44 @@ async function runAllTests() {
       'filter_step_1'
     );
     return assertEqual(count, 2, 'LIKE search for "Connection" should match 2 rows');
+  });
+
+  // --------------------------------------------------------------------------
+  printSection('getFilterOptions: direct filter (no temp table)');
+  // --------------------------------------------------------------------------
+
+  runTest('getFilterOptions with no filters returns all options from logs table', () => {
+    const svc = buildDatabaseService(SQL, SEED_LOGS);
+    const opts = svc.getFilterOptions('logs', false);
+    return assertEqual(opts.totalLogs, SEED_LOGS.length, 'Should count all logs when no filters provided');
+  });
+
+  runTest('getFilterOptions with logLevelInclude filter counts only matching rows', () => {
+    const svc = buildDatabaseService(SQL, SEED_LOGS);
+    // Only ERROR rows (2 rows) should be visible
+    const opts = svc.getFilterOptions('logs', false, { logLevelInclude: ['ERROR'] });
+    return assertEqual(opts.totalLogs, 2, 'Should count only ERROR rows when logLevelInclude=ERROR');
+  });
+
+  runTest('getFilterOptions with logLevelInclude filter shows correct log level counts', () => {
+    const svc = buildDatabaseService(SQL, SEED_LOGS);
+    const opts = svc.getFilterOptions('logs', false, { logLevelInclude: ['ERROR'] });
+    // Only ERROR level should appear
+    return assertEqual(opts.logLevels.length, 1, 'Should return exactly 1 log level (ERROR)');
+  });
+
+  runTest('getFilterOptions with filenameExclude filter omits excluded file rows', () => {
+    const svc = buildDatabaseService(SQL, SEED_LOGS);
+    // Exclude sys.log (2 rows), keeping only app.log (4 rows)
+    const opts = svc.getFilterOptions('logs', false, { filenameExclude: ['sys.log'] });
+    return assertEqual(opts.totalLogs, 4, 'Should count only app.log rows when sys.log is excluded');
+  });
+
+  runTest('getFilterOptions with search filter counts only matching rows', () => {
+    const svc = buildDatabaseService(SQL, SEED_LOGS);
+    // "failed" matches "Connection failed" and "Request failed" → 2 rows
+    const opts = svc.getFilterOptions('logs', false, { search: 'failed' });
+    return assertEqual(opts.totalLogs, 2, 'Should count only rows matching search term');
   });
 
   printSummary('FILTER CHAIN TEST SUITE');

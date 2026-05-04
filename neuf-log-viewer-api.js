@@ -131,7 +131,7 @@ app.post('/filter_option', async (req, res) => {
     const parsedFilters = parseFiltersFromRequest(filters);
 
     // Get filter options (loadDatabase will check if DB exists)
-    const result = await logService.getFilterOptions(FOLDER_PATH, inputTable, limitedOptions);
+    const result = await logService.getFilterOptions(FOLDER_PATH, inputTable, limitedOptions, parsedFilters);
     res.json(result);
 
   } catch (error) {
