@@ -65,21 +65,27 @@ class PresetService {
   }
 
   /**
-   * Load filter options snapshot from JSON file.
+   * Load filter options snapshot from JSON file and merge with user-defined presets
+   * from preset.json at the project root.
+   * User presets are loaded first; snapshot presets (data-derived) take precedence
+   * on ID collision so dynamic suggestions always win.
    * @param {string} dbDir - path to the DB directory (used to construct full path to presets file)
    * @param {Function} logger - Logger function
-   * @returns {Object|null} filterOptions snapshot, or null if file not found
+   * @returns {Object} Merged preset map (never null — at minimum returns user presets or {})
    */
   static loadPreset(dbDir, logger = console.log) {
+    const userPresets = PresetService.loadUserPresets(null, logger);
+
     const presetsPath = PresetService.getPresetsPath(dbDir);
-    if (!fs.existsSync(presetsPath)) return null;
+    if (!fs.existsSync(presetsPath)) return userPresets;
     try {
       const raw = fs.readFileSync(presetsPath, 'utf-8');
-      const parsed = JSON.parse(raw);
-      return parsed || null;
+      const snapshotPresets = JSON.parse(raw) || {};
+      // Snapshot (data-derived) presets override user presets on key collision
+      return { ...userPresets, ...snapshotPresets };
     } catch (e) {
       logger(`⚠️  Failed to load preset snapshot: ${e.message}`);
-      return null;
+      return userPresets;
     }
   }
 

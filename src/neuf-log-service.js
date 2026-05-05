@@ -452,12 +452,9 @@ class NEUFLogService {
     if (!filters || !filters.preset) return;
 
     // Always resolve presets from snapshot (generated at scan time from base logs table).
-    // Merge user presets (preset.json) first, then snapshot presets on top so that
-    // data-derived dynamic presets take precedence over static user-defined ones.
+    // loadPreset merges user presets (preset.json) with the scan-time snapshot.
     const { dbDir } = this.getDbPath(folderPath);
-    const snapshotPresets = PresetService.loadPreset(dbDir, this.logger) || {};
-    const userPresets = PresetService.loadUserPresets(null, this.logger);
-    const presets = { ...userPresets, ...snapshotPresets };
+    const presets = PresetService.loadPreset(dbDir, this.logger);
     PresetService.applyPreset(filters, presets, this.logger);
   }
 
@@ -475,11 +472,8 @@ class NEUFLogService {
     this.logger(`💡 Getting preset suggestions`);
 
     const { dbDir } = this.getDbPath(folderPath);
-    // Merge user presets (preset.json) first, then snapshot presets on top so that
-    // data-derived dynamic presets take precedence over static user-defined ones.
-    const snapshotPresets = PresetService.loadPreset(dbDir, this.logger) || {};
-    const userPresets = PresetService.loadUserPresets(null, this.logger);
-    const presets = { ...userPresets, ...snapshotPresets };
+    // loadPreset merges user presets (preset.json) with the scan-time snapshot.
+    const presets = PresetService.loadPreset(dbDir, this.logger);
 
     // Strip internal filters field — only expose id, label, description to callers
     const clientSuggestions = Object.values(presets).map(({ id, label, description }) => ({ id, label, description }));

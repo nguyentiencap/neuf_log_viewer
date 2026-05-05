@@ -288,4 +288,68 @@ runTest('Static presets from preset.json can be applied via applyPreset', functi
   );
 });
 
+// ─── loadPreset (merged) ──────────────────────────────────────────────────────
+
+printSection('PresetService.loadPreset — merged from preset.json + snapshot');
+
+runTest('Returns user presets when no snapshot file exists', function() {
+  const result = PresetService.loadPreset('/tmp/nonexistent-db-dir');
+  return assertEqual(
+    typeof result === 'object' && result !== null && 'exclude_endpoint_tester' in result,
+    true,
+    'should return user presets from preset.json even without a snapshot'
+  );
+});
+
+runTest('Merges snapshot presets with user presets; snapshot takes precedence', function() {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'neuf-test-'));
+  const snapshotPath = path.join(tmpDir, 'neuf-presets.json');
+  const snapshot = {
+    custom_snap: {
+      id: 'custom_snap',
+      label: '📸 Snapshot preset',
+      description: 'From snapshot',
+      filters: { logLevelInclude: ['ERROR'] }
+    },
+    // Override a key that also exists in preset.json
+    exclude_endpoint_tester: {
+      id: 'exclude_endpoint_tester',
+      label: '📸 Overridden by snapshot',
+      description: 'Snapshot version',
+      filters: { componentExclude: ['%SnapshotEndpoint%'] }
+    }
+  };
+  fs.writeFileSync(snapshotPath, JSON.stringify(snapshot));
+  try {
+    const result = PresetService.loadPreset(tmpDir);
+    const hasUserKey = 'exclude_historical_data' in result;
+    const hasSnapKey = 'custom_snap' in result;
+    const snapshotWins = result.exclude_endpoint_tester.label === '📸 Overridden by snapshot';
+    return assertEqual(
+      hasUserKey && hasSnapKey && snapshotWins,
+      true,
+      'should contain both user and snapshot presets, with snapshot winning on conflict'
+    );
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true });
+  }
+});
+
+runTest('Returns user presets when snapshot file is malformed', function() {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'neuf-test-'));
+  const snapshotPath = path.join(tmpDir, 'neuf-presets.json');
+  fs.writeFileSync(snapshotPath, 'not valid json');
+  try {
+    const warnings = [];
+    const result = PresetService.loadPreset(tmpDir, (msg) => warnings.push(msg));
+    return assertEqual(
+      'exclude_endpoint_tester' in result && warnings.length === 1,
+      true,
+      'should fall back to user presets and log warning when snapshot is malformed'
+    );
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true });
+  }
+});
+
 printSummary('PRESET SERVICE');

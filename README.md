@@ -63,7 +63,46 @@ Enter filter criteria in the sidebar:
 | `exclude_dws` | Exclude components starting with "Dws" |
 | `exclude_wiring` | Exclude components containing "Wiring" |
 
-**How to use:** Select a preset from the Presets list in the Web UI or add custom presets in `filter_preset.json`.
+**How to use:** Select a preset from the Presets list in the Web UI or add custom presets in `preset.json`.
+
+#### Adding Custom Presets
+
+You can define your own presets by editing the `preset.json` file located at the project root (same directory as `neuf-log-viewer-api.js`).
+
+Each entry in the file follows this structure:
+
+```json
+{
+  "my_preset_id": {
+    "id": "my_preset_id",
+    "label": "🏷️ My Preset Label",
+    "description": "Short description shown in the UI",
+    "filters": {
+      "componentExclude": ["%MyComponent%"],
+      "logLevelInclude": ["ERROR"]
+    }
+  }
+}
+```
+
+**Supported filter fields:**
+
+| Field | Type | Description |
+|---|---|---|
+| `logLevelInclude` | `string[]` | Include only these log levels (e.g. `["ERROR", "WARN"]`) |
+| `logLevelExclude` | `string[]` | Exclude these log levels |
+| `componentInclude` | `string[]` | Include only these components (supports SQL `%LIKE%` wildcards) |
+| `componentExclude` | `string[]` | Exclude these components (supports SQL `%LIKE%` wildcards; use `null` to exclude entries with no component) |
+| `threadInclude` | `string[]` | Include only these threads |
+| `threadExclude` | `string[]` | Exclude these threads |
+| `deviceInclude` | `string[]` | Include only these device IDs |
+| `deviceExclude` | `string[]` | Exclude these device IDs |
+| `filenameInclude` | `string[]` | Include only logs from these filenames |
+| `filenameExclude` | `string[]` | Exclude logs from these filenames |
+
+**Notes:**
+- Changes to `preset.json` take effect immediately on the next API request — no restart required.
+- Data-derived presets (generated automatically from your log data at scan time) take precedence over entries in `preset.json` if they share the same `id`.
 
 #### 3. Pagination
 - Adjust the number of logs per page (default: 50)
