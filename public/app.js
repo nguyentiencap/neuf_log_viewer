@@ -296,6 +296,20 @@
   function renderFilterOptions() {
     const options = state.filterOptions;
 
+    // Save checked values for all fields before re-rendering
+    const allFields = [
+      'timeBucket',
+      'filenameInclude', 'filenameExclude',
+      'logLevelInclude', 'logLevelExclude',
+      'deviceInclude', 'deviceExclude',
+      'componentInclude', 'componentExclude',
+      'threadInclude', 'threadExclude'
+    ];
+    const savedChecked = {};
+    allFields.forEach(function(field) {
+      savedChecked[field] = getSelectedValues(field);
+    });
+
     // Render checkboxes for each filter type
     renderCheckboxes('timeBucket', options.timeBuckets || [], false); // Time: single column
     renderCheckboxes('filenameInclude', options.filenames || [], true);
@@ -308,6 +322,20 @@
     renderCheckboxes('componentExclude', options.components || [], true);
     renderCheckboxes('threadInclude', options.threads || [], true);
     renderCheckboxes('threadExclude', options.threads || [], true);
+
+    // Restore checked state after re-render
+    allFields.forEach(function(field) {
+      if (savedChecked[field].length === 0) return;
+      savedChecked[field].forEach(function(value) {
+        const checkboxValue = value === null ? '__NULL__' : String(value);
+        $('.' + field + '-checkbox').each(function() {
+          if ($(this).val() === checkboxValue) {
+            $(this).prop('checked', true);
+          }
+        });
+      });
+      window.updateSelectAll(field);
+    });
 
     // Show/hide advanced filters based on total logs
     const showAdvanced = options.totalLogs > 200;
@@ -465,14 +493,122 @@
     clearFiltersUI();
 
     $('#presetGroup').hide();
+    $('#activeFiltersGroup').hide();
 
     loadLogs();
   }
 
   /**
-   * Load logs
-   * Uses /filter_log with direct filters payload
+   * Render active filter tags above the filter panel
    */
+  function renderActiveFilters() {
+    const container = $('#activeFilterTags');
+    container.empty();
+
+    let hasActive = false;
+
+    // Preset steps
+    state.presetSteps.forEach(function(step, index) {
+      hasActive = true;
+      const tag = $('<span class="active-filter-tag preset-tag"></span>');
+      tag.append($('<span></span>').text('⚡ ' + step.label));
+      const btn = $('<button class="remove-tag-btn" title="Remove">×</button>');
+      btn.on('click', function() { removePresetStep(index); });
+      tag.append(btn);
+      container.append(tag);
+    });
+
+    // Array-type filters
+    const fieldLabels = {
+      timeBucket:       '⏰',
+      filenameInclude:  '📄✅',
+      filenameExclude:  '📄❌',
+      logLevelInclude:  '📊✅',
+      logLevelExclude:  '📊❌',
+      deviceInclude:    '📱✅',
+      deviceExclude:    '📱❌',
+      componentInclude: '🔧✅',
+      componentExclude: '🔧❌',
+      threadInclude:    '🧵✅',
+      threadExclude:    '🧵❌'
+    };
+
+    Object.keys(fieldLabels).forEach(function(field) {
+      if (!state.filters[field] || state.filters[field].length === 0) return;
+      state.filters[field].forEach(function(value) {
+        hasActive = true;
+        const displayVal = value === null ? '(empty)' : String(value);
+        const tag = $('<span class="active-filter-tag"></span>');
+        tag.append($('<span></span>').text(fieldLabels[field] + ' ' + displayVal));
+        const btn = $('<button class="remove-tag-btn" title="Remove">×</button>');
+        btn.on('click', function() { removeArrayFilter(field, value); });
+        tag.append(btn);
+        container.append(tag);
+      });
+    });
+
+    // Search filter
+    if (state.filters.search) {
+      hasActive = true;
+      const tag = $('<span class="active-filter-tag"></span>');
+      tag.append($('<span></span>').text('🔎 ' + state.filters.search));
+      const btn = $('<button class="remove-tag-btn" title="Remove">×</button>');
+      btn.on('click', removeSearchFilter);
+      tag.append(btn);
+      container.append(tag);
+    }
+
+    $('#activeFiltersGroup').toggle(hasActive);
+  }
+
+  /**
+   * Remove one value from an array filter, uncheck its checkbox, and reload
+   * @param {string} field - Filter field name
+   * @param {*} value - Value to remove (null allowed)
+   */
+  function removeArrayFilter(field, value) {
+    if (!state.filters[field]) return;
+    state.filters[field] = state.filters[field].filter(function(v) { return v !== value; });
+    if (state.filters[field].length === 0) {
+      delete state.filters[field];
+    }
+
+    // Uncheck corresponding checkbox
+    const checkboxValue = value === null ? '__NULL__' : String(value);
+    $('.' + field + '-checkbox').each(function() {
+      if ($(this).val() === checkboxValue) {
+        $(this).prop('checked', false);
+      }
+    });
+    window.updateSelectAll(field);
+
+    state.currentPage = 1;
+    loadLogs();
+  }
+
+  /**
+   * Remove search filter and reload
+   */
+  function removeSearchFilter() {
+    delete state.filters.search;
+    $('#searchFilter').val('');
+    state.currentPage = 1;
+    loadLogs();
+  }
+
+  /**
+   * Remove a preset step by index and reload
+   * @param {number} index - Index in state.presetSteps
+   */
+  function removePresetStep(index) {
+    state.presetSteps.splice(index, 1);
+    // Re-show removed preset suggestion if still in cached list
+    renderPresetSuggestions(state.presetSuggestions);
+    state.currentPage = 1;
+    loadLogs();
+  }
+
+
   function loadLogs() {
     const requestFilters = buildRequestFilters();
 
@@ -495,6 +631,7 @@
           renderLogs(response.logs);
           updatePagination();
           loadFilterOptions();
+          renderActiveFilters();
         } else {
           showStatus('❌ Failed to load logs: ' + response.error, 'error');
         }

@@ -554,6 +554,71 @@ body {
   margin-left: 5px;
 }
 
+/* Active Filters */
+.active-filters-group {
+  background: #fff8e1;
+  border: 1px solid #ffe082;
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin-bottom: 12px;
+}
+
+.active-filters-header {
+  font-weight: bold;
+  font-size: 11px;
+  color: #7b5e00;
+  margin-bottom: 7px;
+}
+
+.active-filter-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.active-filter-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #fff;
+  border: 1px solid #ffc107;
+  border-radius: 12px;
+  padding: 2px 6px 2px 8px;
+  font-size: 11px;
+  color: #5d4200;
+  max-width: 210px;
+}
+
+.active-filter-tag > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+}
+
+.active-filter-tag.preset-tag {
+  border-color: #80bdff;
+  background: #e8f4ff;
+  color: #004085;
+}
+
+.remove-tag-btn {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0 0 0 2px;
+  color: #888;
+  font-family: inherit;
+}
+
+.remove-tag-btn:hover {
+  color: #dc3545;
+}
+
 /* Preset Suggestions */
 .preset-group {
   background: #f0f7ff;
