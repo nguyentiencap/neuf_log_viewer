@@ -19,20 +19,6 @@ function makeLogLevels(levels) {
   return levels.map(level => ({ log_level: level, count: 100 }));
 }
 
-/** Recursively delete a directory; works on Node.js 12+ (no fs.rmSync required). */
-function rmdirRec(dir) {
-  if (!fs.existsSync(dir)) return;
-  fs.readdirSync(dir).forEach(function(entry) {
-    const full = path.join(dir, entry);
-    if (fs.lstatSync(full).isDirectory()) {
-      rmdirRec(full);
-    } else {
-      fs.unlinkSync(full);
-    }
-  });
-  fs.rmdirSync(dir);
-}
-
 // suggestions is an object map { [id]: { ... } }
 function getSuggestionIds(suggestions) {
   return Object.keys(suggestions);
@@ -279,6 +265,32 @@ runTest('Returns empty object for a malformed JSON file', function() {
   }
 });
 
+runTest('Skips and warns for entries missing the filters property', function() {
+  const tmpFile = path.join(os.tmpdir(), 'test-preset-nofilters-' + process.pid + '-' + Math.random().toString(36).slice(2) + '.json');
+  const presets = {
+    good_preset:       { id: 'good_preset',       label: 'Good',        description: 'ok',                   filters: { logLevelInclude: ['ERROR'] } },
+    bad_no_filters:    { id: 'bad_no_filters',     label: 'No filters',  description: 'missing filters field' },
+    bad_null_filters:  { id: 'bad_null_filters',   label: 'Null',        description: 'null filters',         filters: null },
+    bad_string_filters:{ id: 'bad_string_filters', label: 'String',      description: 'non-object filters',   filters: 'ERROR' }
+  };
+  fs.writeFileSync(tmpFile, JSON.stringify(presets));
+  try {
+    const warnings = [];
+    const result = PresetService.loadUserPresets(tmpFile, (msg) => warnings.push(msg));
+    return assertEqual(
+      'good_preset' in result &&
+        !('bad_no_filters' in result) &&
+        !('bad_null_filters' in result) &&
+        !('bad_string_filters' in result) &&
+        warnings.length === 3,
+      true,
+      'should keep only good_preset and log one warning per skipped entry'
+    );
+  } finally {
+    fs.unlinkSync(tmpFile);
+  }
+});
+
 runTest('User presets from preset.json at project root are loadable', function() {
   // Verifies the actual preset.json ships with required fields on every entry
   const presets = PresetService.loadUserPresets();
@@ -345,7 +357,7 @@ runTest('Merges snapshot presets with user presets; snapshot takes precedence', 
       'should contain both user and snapshot presets, with snapshot winning on conflict'
     );
   } finally {
-    rmdirRec(tmpDir);
+    fs.rmSync(tmpDir, { recursive: true });
   }
 });
 
@@ -362,7 +374,7 @@ runTest('Returns user presets when snapshot file is malformed', function() {
       'should fall back to user presets and log warning when snapshot is malformed'
     );
   } finally {
-    rmdirRec(tmpDir);
+    fs.rmSync(tmpDir, { recursive: true });
   }
 });
 
@@ -384,7 +396,7 @@ runTest('Logs a warning when snapshot shadows user preset.json entries', functio
     const hasWarning = warnings.some(msg => msg.includes('exclude_endpoint_tester') && msg.includes('shadowed'));
     return assertEqual(hasWarning, true, 'should warn that exclude_endpoint_tester is shadowed by the snapshot');
   } finally {
-    rmdirRec(tmpDir);
+    fs.rmSync(tmpDir, { recursive: true });
   }
 });
 

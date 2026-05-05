@@ -45,7 +45,18 @@ class PresetService {
     if (!fs.existsSync(filePath)) return {};
     try {
       const raw = fs.readFileSync(filePath, 'utf-8');
-      return JSON.parse(raw) || {};
+      const parsed = JSON.parse(raw) || {};
+      // Validate each entry: warn and skip any that lack a valid `filters` object,
+      // because applyPreset() calls Object.entries(preset.filters) and would crash.
+      const valid = {};
+      for (const [id, entry] of Object.entries(parsed)) {
+      if (!entry || !entry.filters || typeof entry.filters !== 'object') {
+          logger(`⚠️  Skipping malformed preset "${id}" in ${filePath}: missing or invalid "filters" property`);
+          continue;
+        }
+        valid[id] = entry;
+      }
+      return valid;
     } catch (e) {
       logger(`⚠️  Failed to load user presets: ${e.message}`);
       return {};

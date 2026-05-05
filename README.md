@@ -11,7 +11,7 @@ The tool stores logs in a SQLite database for fast searching and filtering.
 ## Installation & Running
 
 ### Requirements
-- Node.js v12+
+- Node.js v14+
 - npm
 
 ### Install Dependencies
