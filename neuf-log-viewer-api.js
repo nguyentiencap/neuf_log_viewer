@@ -8,6 +8,7 @@
  *
  * Provides REST API endpoints for log analysis:
  * - POST /filter_log - Filter logs with pagination
+ * - POST /export_log - Export filtered logs
  * - POST /filter_option - Get available filter options
  */
 
@@ -224,6 +225,50 @@ app.post('/filter_log', async (req, res) => {
 });
 
 /**
+ * POST /export_log
+ * Export all logs matching current filters as a downloadable .log file.
+ *
+ * Body: {
+ *   filters: { ...same as /filter_log },
+ *   steps: [{ filters: ... }] (legacy compatibility)
+ * }
+ */
+app.post('/export_log', async (req, res) => {
+  try {
+    const { filters = {}, steps = [] } = req.body;
+    const legacyStep = steps[0] && steps[0].filters ? steps[0].filters : {};
+    const requestFilters = Object.keys(filters).length > 0 ? filters : legacyStep;
+
+    // Parse and normalize filters (API layer responsibility)
+    const parsedFilters = parseFiltersFromRequest(requestFilters);
+    await logService.applyPreset(FOLDER_PATH, parsedFilters);
+
+    const exportPageSize = 5000;
+    const firstPageResult = await logService.filterLogs(FOLDER_PATH, parsedFilters, { page: 1, pageSize: exportPageSize });
+
+    const exportedLines = firstPageResult.logs.map(log => logService.formatLogEntry(log, "api"));
+
+    for (let page = 2; page <= firstPageResult.totalPages; page++) {
+      const pageResult = await logService.filterLogs(FOLDER_PATH, parsedFilters, { page, pageSize: exportPageSize });
+      const pageLines = pageResult.logs.map(log => logService.formatLogEntry(log, "api"));
+      exportedLines.push(...pageLines);
+    }
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const filename = `neuf-logs-export-${timestamp}.log`;
+
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(exportedLines.join('\n'));
+
+  } catch (error) {
+    console.error('❌ Export logs error:', error);
+    console.error('Stack trace:', error.stack);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
  * GET /health
  * Health check endpoint
  */
@@ -276,6 +321,7 @@ async function main() {
       console.log('');
       console.log('📋 Available endpoints:');
       console.log('  POST   /filter_log      - Filter logs');
+      console.log('  POST   /export_log      - Export filtered logs');
       console.log('  POST   /filter_option         - Get filter options');
       console.log('  POST   /preset_suggestions   - Get dynamic filter suggestions');
       console.log('  GET    /health                - Health check');

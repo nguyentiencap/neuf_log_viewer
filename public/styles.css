@@ -170,6 +170,26 @@ body {
   user-select: none;
 }
 
+.toolbar-action-btn {
+  padding: 6px 10px;
+  background: #17a2b8;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.toolbar-action-btn:hover:not(:disabled) {
+  background: #138496;
+}
+
+.toolbar-action-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
 .log-entry {
   padding: 4px 8px;
   margin-bottom: 1px;

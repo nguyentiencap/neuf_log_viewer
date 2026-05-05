@@ -38,6 +38,7 @@
     // Filter actions
     $('#applyFilterBtn').on('click', applyFilters);
     $('#clearFilterBtn').on('click', clearFilters);
+    $('#exportLogBtn').on('click', exportLogs);
 
     // Show all checkbox
     $('#showAllCheckbox').on('change', function() {
@@ -53,6 +54,64 @@
         jumpToPage();
       }
     });
+  }
+
+  /**
+   * Export logs with current filters as a downloadable file.
+   */
+  function exportLogs() {
+    const exportButton = $('#exportLogBtn');
+    const requestFilters = buildRequestFilters();
+
+    exportButton.prop('disabled', true).text('Exporting...');
+
+    fetch(API_BASE + '/export_log', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ filters: requestFilters })
+    })
+      .then(function(response) {
+        if (!response.ok) {
+          return response.text().then(function(bodyText) {
+            let errorPayload;
+            try {
+              errorPayload = JSON.parse(bodyText);
+            } catch (parseError) {
+              errorPayload = null;
+            }
+
+            const errorMessage = (errorPayload && errorPayload.error) || bodyText || 'Unknown error';
+            throw new Error(errorMessage);
+          });
+        }
+
+        const contentDisposition = response.headers.get('content-disposition') || '';
+        const filenameMatch = contentDisposition.match(/filename="([^"]+)"/i);
+        const filename = filenameMatch ? filenameMatch[1] : 'neuf-logs-export.log';
+
+        return response.blob().then(function(blob) {
+          return { blob: blob, filename: filename };
+        });
+      })
+      .then(function(result) {
+        const downloadUrl = window.URL.createObjectURL(result.blob);
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        link.download = result.filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(downloadUrl);
+        showStatus('✅ Export logs completed', 'success');
+      })
+      .catch(function(error) {
+        showStatus('❌ Failed to export logs: ' + error.message, 'error');
+      })
+      .finally(function() {
+        exportButton.prop('disabled', false).text('📤 Export Logs');
+      });
   }
 
   /**
