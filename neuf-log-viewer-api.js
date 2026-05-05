@@ -230,14 +230,16 @@ app.post('/filter_log', async (req, res) => {
  *
  * Body: {
  *   filters: { ...same as /filter_log },
- *   steps: [{ filters: ... }] (legacy compatibility)
+ *   steps: [{ filters: ... }] (legacy compatibility),
+ *   format: "api" | "compact" (optional, default: "api")
  * }
  */
 app.post('/export_log', async (req, res) => {
   try {
-    const { filters = {}, steps = [] } = req.body;
+    const { filters = {}, steps = [], format = 'api' } = req.body;
     const legacyStep = steps[0] && steps[0].filters ? steps[0].filters : {};
     const requestFilters = Object.keys(filters).length > 0 ? filters : legacyStep;
+    const exportFormat = format === 'compact' ? 'compact' : 'api';
 
     // Parse and normalize filters (API layer responsibility)
     const parsedFilters = parseFiltersFromRequest(requestFilters);
@@ -246,11 +248,11 @@ app.post('/export_log', async (req, res) => {
     const exportPageSize = 5000;
     const firstPageResult = await logService.filterLogs(FOLDER_PATH, parsedFilters, { page: 1, pageSize: exportPageSize });
 
-    const exportedLines = firstPageResult.logs.map(log => logService.formatLogEntry(log, "api"));
+    const exportedLines = firstPageResult.logs.map(log => logService.formatLogEntry(log, exportFormat));
 
     for (let page = 2; page <= firstPageResult.totalPages; page++) {
       const pageResult = await logService.filterLogs(FOLDER_PATH, parsedFilters, { page, pageSize: exportPageSize });
-      const pageLines = pageResult.logs.map(log => logService.formatLogEntry(log, "api"));
+      const pageLines = pageResult.logs.map(log => logService.formatLogEntry(log, exportFormat));
       exportedLines.push(...pageLines);
     }
 

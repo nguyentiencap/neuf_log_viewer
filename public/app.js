@@ -62,6 +62,7 @@
   function exportLogs() {
     const exportButton = $('#exportLogBtn');
     const requestFilters = buildRequestFilters();
+    const exportFormat = $('#exportFormatSelect').val() || 'api';
 
     exportButton.prop('disabled', true).text('Exporting...');
 
@@ -70,7 +71,7 @@
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ filters: requestFilters })
+      body: JSON.stringify({ filters: requestFilters, format: exportFormat })
     })
       .then(function(response) {
         if (!response.ok) {

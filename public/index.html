@@ -16,6 +16,13 @@
       <label class="show-all-label">
         <input type="checkbox" id="showAllCheckbox"> Show all (expand log entries)
       </label>
+      <label class="show-all-label" for="exportFormatSelect">
+        Export format:
+        <select id="exportFormatSelect">
+          <option value="api" selected>Full</option>
+          <option value="compact">Compact (no thread/device)</option>
+        </select>
+      </label>
       <button id="exportLogBtn" class="toolbar-action-btn">📤 Export Logs</button>
     </div>
     <div id="log-container">

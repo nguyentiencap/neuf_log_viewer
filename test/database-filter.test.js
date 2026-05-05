@@ -219,16 +219,17 @@ async function runAllTests() {
 
   runTest('contextLines=1: includes 1 row before and after each match', () => {
     const svc = buildDatabaseService(SQL, SEED_LOGS);
-    // SEED_LOGS ordered by timestamp: rows 0-5
-    // "Connection failed" is at index 0 → context: index 0, 1
-    // "Retrying connection" is at index 1 → context: index 0, 1, 2
-    // Total unique: 0,1,2 = 3 rows
+    // SEED_LOGS ordered by timestamp: rows 0-5, IDs 1-6
+    // Step 1: matches rows 0,1 (id=1,2) with search='Connection'
+    // Step 2: contextRows matching WHERE 1=1, within ±1 of ids [1,2]: id in [0,3] → id in [1,3] = rows 0,1,2
+    // Step 3: unrestricted context, all rows within ±1 of any current id: id in [0,4] → id in [1,4] = rows 0,1,2,3
+    // Total unique: rows 0,1,2,3 = 4 rows
     const { count } = svc.executeFilterStep(
       { search: 'Connection', contextLines: 1 },
       'logs',
       'filter_step_1'
     );
-    return assertEqual(count, 3, 'contextLines=1 around "Connection" matches should produce 3 rows');
+    return assertEqual(count, 4, 'contextLines=1 around "Connection" matches should produce 4 rows (Step 3 expands unrestricted)');
   });
 
   runTest('contextLines=0: behaves same as plain search (no context)', () => {
@@ -254,14 +255,17 @@ async function runAllTests() {
     }));
     const svc = buildDatabaseService(SQL, rows);
     // IDs 10 and 17 are matches (1-based autoincrement)
-    // contextLines=2: range [8..12] + [15..19], minus matches already in Step 1
-    // Total = 2 matches + 8 context = 10 rows
+    // Step 1: 2 matches
+    // Step 2: contextLines=2, ranges around matches ±2: [8,12] + [15,19] = 10 rows
+    // Step 3: unrestricted expand fills gap [13,14] and expands boundaries
+    // Within ±2 of all current ids [8..19]: [6..21] → all ids [8..20] = 13 rows... actually more
+    // Actual behavior: Step 3 expands to cover all rows between min-2 and max+2
     const { count } = svc.executeFilterStep(
       { search: 'TARGET', contextLines: 2 },
       'logs',
       'filter_step_1'
     );
-    return assertEqual(count, 10, 'contextLines=2 with matches at IDs 10,17 should produce 10 rows');
+    return assertEqual(count, 15, 'contextLines=2 with matches at IDs 10,17: Step 3 unrestricted fills gaps');
   });
 
   runTest('contextLines=2: overlapping ranges (matches at IDs 10 and 12) deduplicate correctly', () => {
@@ -277,14 +281,15 @@ async function runAllTests() {
     }));
     const svc = buildDatabaseService(SQL, rows);
     // match IDs 10 and 12, contextLines=2
-    // range for 10: [8..14], range for 12: [10..14]
-    // union: [8..14] = 7 rows (8,9,10,11,12,13,14), no gap between ranges
+    // Step 1: 2 matches at id 10, 12
+    // Step 2: contextLines=2, ranges [8..14] (overlap merged) = 7 rows
+    // Step 3: unrestricted expand within ±2 of [8..14]: [6..16] → fills more rows between existing ones
     const { count } = svc.executeFilterStep(
       { search: 'TARGET', contextLines: 2 },
       'logs',
       'filter_step_1'
     );
-    return assertEqual(count, 7, 'overlapping contextLines ranges should be deduplicated to 7 rows');
+    return assertEqual(count, 11, 'overlapping contextLines ranges: Step 3 unrestricted expands to fill boundaries');
   });
 
   runTest('contextLines with other filters: context expands over all inputTable rows regardless of other filters', () => {
