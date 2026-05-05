@@ -4,9 +4,9 @@
  */
 
 const initSqlJs = require('sql.js');
-const { DatabaseWrapper, DatabaseService } = require('../lib/database');
+const { DatabaseWrapper, DatabaseService } = require('../src/database');
 const { assertEqual, runTest, printSection, printSummary } = require('./test-helpers');
-const { logParserService } = require('../lib/log-parser');
+const { logParserService } = require('../src/log-parser');
 
 // Shorthand helper used when seeding test data
 const getTimeBucket = (ts) => logParserService.getTimeBucket(ts);

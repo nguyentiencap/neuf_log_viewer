@@ -15,7 +15,7 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
-const { NEUFLogService } = require('./lib/neuf-log-service');
+const { NEUFLogService } = require('./src/neuf-log-service');
 
 const app = express();
 const PORT = process.env.PORT || 3001;

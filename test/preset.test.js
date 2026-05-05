@@ -4,7 +4,7 @@
  */
 
 const { assertEqual, runTest, printSection, printSummary } = require('./test-helpers');
-const { PresetService } = require('../lib/preset');
+const { PresetService } = require('../src/preset');
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 

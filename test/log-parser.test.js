@@ -3,7 +3,7 @@
  * Tests all functions in the LogParserService class
  */
 
-const { logParserService } = require('../lib/log-parser');
+const { logParserService } = require('../src/log-parser');
 const { assertEqual, runTest, printSection, printSummary } = require('./test-helpers');
 
 // Use singleton instance

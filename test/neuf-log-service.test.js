@@ -5,7 +5,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { NEUFLogService } = require('../lib/neuf-log-service');
+const { NEUFLogService } = require('../src/neuf-log-service');
 const { assertEqual, runTest, printSection, printSummary } = require('./test-helpers');
 
 // Test directory setup
