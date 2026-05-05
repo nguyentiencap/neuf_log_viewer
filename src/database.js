@@ -407,15 +407,18 @@ class DatabaseService {
           )
         `).run(...paramsNoSearch, contextLines, contextLines);
 
-        // Insert additional context rows: rows within ±contextLines of any match, skip duplicates via PRIMARY KEY
-        this.db.prepare(`
-          INSERT OR IGNORE INTO ${outputTable}
-          SELECT * FROM ${inputTable} i
-          WHERE EXISTS (
-              SELECT 1 FROM ${outputTable} m
-              WHERE i.id BETWEEN m.id - ? AND m.id + ?
-            )
-        `).run(contextLines, contextLines);
+        // Step 3: Insert additional context rows (any rows within ±contextLines of any match, no WHERE filter).
+        // Skipped when strictContext is true to avoid pulling in unrelated rows.
+        if (!filters.strictContext) {
+          this.db.prepare(`
+            INSERT OR IGNORE INTO ${outputTable}
+            SELECT * FROM ${inputTable} i
+            WHERE EXISTS (
+                SELECT 1 FROM ${outputTable} m
+                WHERE i.id BETWEEN m.id - ? AND m.id + ?
+              )
+          `).run(contextLines, contextLines);
+        }
       }
     }
 

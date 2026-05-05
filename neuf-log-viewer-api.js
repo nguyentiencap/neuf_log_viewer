@@ -104,6 +104,7 @@ function parseFiltersFromRequest(query) {
     timeTo: query.timeTo || [],
     search: query.search || '',
     contextLines: parseInt(query.contextLines) || 0,
+    strictContext: query.strictContext === true || query.strictContext === 'true',
     preset: query.preset || ''
   };
   

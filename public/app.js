@@ -397,7 +397,8 @@
 
     state.filters = {
       search: $('#searchFilter').val(),
-      contextLines: parseInt($('#contextLinesFilter').val()) || 0
+      contextLines: parseInt($('#contextLinesFilter').val()) || 0,
+      strictContext: $('#strictContextFilter').is(':checked')
     };
 
     // Add filters only if they have values
@@ -444,6 +445,7 @@
   function clearFiltersUI() {
     $('#searchFilter').val('');
     $('#contextLinesFilter').val('0');
+    $('#strictContextFilter').prop('checked', true);
     $('.checkbox-item input[type="checkbox"]').prop('checked', false);
   }
 
