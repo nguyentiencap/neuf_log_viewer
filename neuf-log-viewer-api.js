@@ -146,14 +146,7 @@ app.post('/filter_option', async (req, res) => {
 
 /**
  * POST /preset_suggestions
- * Get dynamic preset filter suggestions based on current filtered data.
- * Suggestions are recomputed after every filter step so they stay contextually
- * relevant as the user progressively narrows down results.
- *
- * Body: {
- *   filters: { ... }  - Currently applied filters (same shape as filter_log),
- *   outputTable: string (optional) - output table returned by /filter_log
- * }
+ * Get preset filter suggestions
  *
  * Response: {
  *   success: true,
@@ -164,18 +157,8 @@ app.post('/filter_option', async (req, res) => {
  */
 app.post('/preset_suggestions', async (req, res) => {
   try {
-    const { filters = {}, inputTable = null } = req.body;
-
-    // Parse and normalize filters (API layer responsibility)
-    const parsedFilters = parseFiltersFromRequest(filters);
-
-    // Resolve preset so suggestions are contextually aware of what is already applied
-    await logService.applyPreset(FOLDER_PATH, inputTable, parsedFilters);
-
-    const result = await logService.getPresetSuggestions(FOLDER_PATH, inputTable, parsedFilters);
-
+    const result = await logService.getPresetSuggestions(FOLDER_PATH);
     res.json(result);
-
   } catch (error) {
     console.error('❌ Preset suggestions error:', error);
     console.error('Stack trace:', error.stack);
@@ -210,15 +193,15 @@ app.post('/preset_suggestions', async (req, res) => {
  */
 app.post('/filter_log', async (req, res) => {
   try {
-    const { filters = {}, steps = [], page = 1, pageSize = 1000, raw = false, inputTable = null } = req.body;
+    const { filters = {}, steps = [], page = 1, pageSize = 1000, raw = false } = req.body;
     const legacyStep = steps[0] && steps[0].filters ? steps[0].filters : {};
     const requestFilters = Object.keys(filters).length > 0 ? filters : legacyStep;
 
     // Parse and normalize filters (API layer responsibility)
     const parsedFilters = parseFiltersFromRequest(requestFilters);
-    await logService.applyPreset(FOLDER_PATH, inputTable, parsedFilters);
+    await logService.applyPreset(FOLDER_PATH, parsedFilters);
 
-    const result = await logService.filterLogs(FOLDER_PATH, inputTable, parsedFilters, { page, pageSize });
+    const result = await logService.filterLogs(FOLDER_PATH, parsedFilters, { page, pageSize });
 
     if (raw) {
       res.json(result);

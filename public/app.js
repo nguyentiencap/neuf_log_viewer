@@ -17,7 +17,9 @@
     inputTable: null,
     filterOptions: {},
     presetSteps: [],    // history of applied preset suggestions
-    activeFilterStep: 0   // step number to query filter options from (0 = logs, N = filter_N)
+    activeFilterStep: 0,  // step number to query filter options from (0 = logs, N = filter_N)
+    presetSuggestionsLoaded: false,  // flag to ensure /preset_suggestions is called only once
+    presetSuggestions: []  // cached suggestions from the single API call
   };
 
   // API base URL
@@ -36,6 +38,11 @@
     // Filter actions
     $('#applyFilterBtn').on('click', applyFilters);
     $('#clearFilterBtn').on('click', clearFilters);
+
+    // Show all checkbox
+    $('#showAllCheckbox').on('change', function() {
+      toggleLogTruncation();
+    });
 
     // Pagination
     $('#prevPageBtn').on('click', previousPage);
@@ -87,7 +94,12 @@
         if (response.success) {
           state.filterOptions = response.data;
           renderFilterOptions();
-          loadPresetSuggestions();
+          if (state.total < 1000) {
+            $('#presetGroup').hide();
+          } else if (!state.presetSuggestionsLoaded) {
+            state.presetSuggestionsLoaded = true;
+            loadPresetSuggestions();
+          }
         }
       },
       error: function(xhr) {
@@ -99,8 +111,13 @@
 
   /**
    * Load preset suggestions based on current filters
+   * Hidden when total logs is below 1000
    */
   function loadPresetSuggestions() {
+    if (state.total < 1000) {
+      $('#presetGroup').hide();
+      return;
+    }
     const filtersPayload = buildRequestFilters();
     $.ajax({
       url: API_BASE + '/preset_suggestions',
@@ -112,7 +129,8 @@
       }),
       success: function(response) {
         if (response.success) {
-          renderPresetSuggestions(response.suggestions || []);
+          state.presetSuggestions = response.suggestions || [];
+          renderPresetSuggestions(state.presetSuggestions);
         }
       },
       error: function() {
@@ -135,7 +153,16 @@
       return;
     }
 
-    suggestions.forEach(function(suggestion) {
+    // Filter out already-applied presets
+    const appliedIds = new Set(state.presetSteps.map(function(s) { return s.id; }));
+    const visibleSuggestions = suggestions.filter(function(s) { return !appliedIds.has(s.id); });
+
+    if (visibleSuggestions.length === 0) {
+      $('#presetGroup').hide();
+      return;
+    }
+
+    visibleSuggestions.forEach(function(suggestion) {
       const btn = $('<button class="preset-btn" type="button"></button>');
       btn.attr('title', suggestion.description);
       btn.html('<span class="preset-btn-label">' + escapeHtml(suggestion.label) + '</span>' +
@@ -145,14 +172,6 @@
       });
       container.append(btn);
     });
-
-    // Update subtitle showing step count
-    const stepCount = state.presetSteps.length;
-    if (stepCount > 0) {
-      $('#presetSubtitle').html('Step ' + (stepCount + 1) + ' &mdash; ' + stepCount + ' step' + (stepCount > 1 ? 's' : '') + ' applied');
-    } else {
-      $('#presetSubtitle').text('Click a suggestion to apply it');
-    }
 
     $('#presetGroup').show();
   }
@@ -164,6 +183,9 @@
   function applyPresetSuggestion(suggestion) {
     // Accumulate preset steps — each step is a separate preset filter in the chain
     state.presetSteps.push({ id: suggestion.id, label: suggestion.label });
+
+    // Re-render to hide the just-applied preset immediately
+    renderPresetSuggestions(state.presetSuggestions);
 
     // Reset to page 1 and reload using the full chain
     state.currentPage = 1;
@@ -195,8 +217,10 @@
       if (!filters[field]) return;
       const selector = fieldMap[field];
       filters[field].forEach(function(value) {
+        // null values use "__NULL__" as checkbox value
+        const checkboxValue = value === null ? '__NULL__' : value;
         $(selector).each(function() {
-          if ($(this).val() === value) {
+          if ($(this).val() === checkboxValue) {
             $(this).prop('checked', true);
           }
         });
@@ -247,23 +271,32 @@
 
     items.forEach(function(item) {
       // Extract value and count from item
+      // Use 'in' operator to detect null values (|| would skip null)
       let value, count;
-      if (typeof item === 'object') {
-        value = item.filename || item.log_level || item.thread_name ||
-                item.device_id || item.component_name || item.time_label || '';
+      if (typeof item === 'object' && item !== null) {
+        value = 'filename' in item ? item.filename :
+                'log_level' in item ? item.log_level :
+                'thread_name' in item ? item.thread_name :
+                'device_id' in item ? item.device_id :
+                'component_name' in item ? item.component_name :
+                'time_label' in item ? item.time_label : '';
         count = item.count || 0;
       } else {
         value = item;
         count = 0;
       }
 
-      const id = fieldName + '_' + value.replace(/[^a-zA-Z0-9]/g, '_');
+      // Use sentinel "__NULL__" as checkbox value for null entries
+      const isNull = value === null || value === undefined;
+      const checkboxValue = isNull ? '__NULL__' : String(value);
+      const displayLabel = isNull ? '<em>(empty)</em>' : escapeHtml(String(value));
+      const id = fieldName + '_' + checkboxValue.replace(/[^a-zA-Z0-9]/g, '_');
       const countText = count ? ' <span class="count">(' + count.toLocaleString() + ')</span>' : '';
-      
+
       const html = `
         <div class="checkbox-item">
-          <input type="checkbox" id="${id}" value="${escapeHtml(value)}" class="${fieldName}-checkbox" onchange="updateSelectAll('${fieldName}')">
-          <label for="${id}">${escapeHtml(value)}${countText}</label>
+          <input type="checkbox" id="${id}" value="${escapeHtml(checkboxValue)}" class="${fieldName}-checkbox" onchange="updateSelectAll('${fieldName}')">
+          <label for="${id}">${displayLabel}${countText}</label>
         </div>
       `;
       container.append(html);
@@ -272,11 +305,13 @@
 
   /**
    * Get selected values from checkboxes
+   * Converts "__NULL__" sentinel back to null
    */
   function getSelectedValues(fieldName) {
     const values = [];
     $('.' + fieldName + '-checkbox:checked').each(function() {
-      values.push($(this).val());
+      const val = $(this).val();
+      values.push(val === '__NULL__' ? null : val);
     });
     return values;
   }
@@ -361,9 +396,13 @@
     state.presetSteps = [];
     state.activeFilterStep = 0;
     state.inputTable = null;
+    state.presetSuggestionsLoaded = false;
+    state.presetSuggestions = [];
 
     // Clear UI
     clearFiltersUI();
+
+    $('#presetGroup').hide();
 
     loadLogs();
   }
@@ -437,16 +476,34 @@
 
   /**
    * Highlight search term in text
+   * Tries to use searchTerm as a regex pattern first; falls back to literal text match
    */
   function highlightSearchTerm(text, searchTerm) {
     if (!searchTerm || !text) return escapeHtml(text);
-    
+
     const escapedText = escapeHtml(text);
     const escapedSearchTerm = escapeHtml(searchTerm);
-    
-    // Case-insensitive search and replace
-    const regex = new RegExp('(' + escapedSearchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+
+    let regex;
+    try {
+      // Try as regex pattern (e.g. "session|timeout")
+      regex = new RegExp('(' + escapedSearchTerm + ')', 'gi');
+      // Validate by testing (throws if invalid)
+      regex.test('');
+    } catch (e) {
+      // Fallback to literal text match
+      regex = new RegExp('(' + escapedSearchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+    }
+
     return escapedText.replace(regex, '<mark class="search-highlight">$1</mark>');
+  }
+
+  /**
+   * Toggle log entry truncation based on showAllCheckbox state
+   */
+  function toggleLogTruncation() {
+    const showAll = $('#showAllCheckbox').is(':checked');
+    $('#log-container').toggleClass('log-truncated', !showAll);
   }
 
   /**
@@ -473,6 +530,9 @@
       logDiv.html(displayLine);
       container.append(logDiv);
     });
+
+    // Apply truncation to container based on checkbox state
+    container.toggleClass('log-truncated', !$('#showAllCheckbox').is(':checked'));
   }
 
   /**

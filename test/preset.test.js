@@ -8,101 +8,57 @@ const { PresetService } = require('../lib/preset');
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function makeDevices(ids) {
-  return ids.map((id, i) => ({ device_id: id, count: 1000 - i * 100 }));
-}
-
 function makeComponents(names) {
   return names.map((name, i) => ({ component_name: name, count: 500 - i * 30 }));
-}
-
-function makeThreads(names) {
-  return names.map((name, i) => ({ thread_name: name, count: 300 - i * 20 }));
 }
 
 function makeLogLevels(levels) {
   return levels.map(level => ({ log_level: level, count: 100 }));
 }
 
-function makeSuggestionIds(suggestions) {
-  return suggestions.map(s => s.id);
+// suggestions is an object map { [id]: { ... } }
+function getSuggestionIds(suggestions) {
+  return Object.keys(suggestions);
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
-printSection('PresetService.getSuggestions — empty / minimal data');
+printSection('PresetService.getPresetSuggestions — empty / minimal data');
 
-runTest('Returns empty array for empty filter options', function() {
-  const suggestions = PresetService.getSuggestions({}, {});
-  return assertEqual(suggestions, [], 'Empty filterOptions should produce no suggestions');
+runTest('Returns empty object for empty filter options', function() {
+  const suggestions = PresetService.getPresetSuggestions({});
+  return assertEqual(Object.keys(suggestions).length, 0, 'Empty filterOptions should produce no suggestions');
 });
 
-runTest('Returns empty array when no fields have data', function() {
-  const options = { devices: [], components: [], threads: [], logLevels: [], totalLogs: 0 };
-  const suggestions = PresetService.getSuggestions(options, {});
-  return assertEqual(suggestions, [], 'All-empty arrays should produce no suggestions');
-});
-
-// ─── Device suggestions ───────────────────────────────────────────────────────
-
-printSection('PresetService.getSuggestions — device suggestions');
-
-runTest('Suggests focus_top_device when multiple devices exist', function() {
-  const options = { devices: makeDevices(['DEV001', 'DEV002', 'DEV003']) };
-  const suggestions = PresetService.getSuggestions(options, {});
-  const ids = makeSuggestionIds(suggestions);
-  return assertEqual(ids.includes('focus_top_device'), true, 'Should suggest focus_top_device');
-});
-
-runTest('focus_top_device uses device with most entries (first in list)', function() {
-  const options = { devices: makeDevices(['TOP_DEVICE', 'DEV002']) };
-  const suggestions = PresetService.getSuggestions(options, {});
-  const suggestion = suggestions.find(s => s.id === 'focus_top_device');
-  return assertEqual(
-    suggestion && suggestion.filters,
-    { deviceInclude: ['TOP_DEVICE'] },
-    'focus_top_device should include the top device'
-  );
-});
-
-runTest('No focus_top_device suggestion when only one device', function() {
-  const options = { devices: makeDevices(['ONLY_DEVICE']) };
-  const suggestions = PresetService.getSuggestions(options, {});
-  const ids = makeSuggestionIds(suggestions);
-  return assertEqual(ids.includes('focus_top_device'), false, 'Should not suggest when only one device');
-});
-
-runTest('No focus_top_device when deviceInclude already applied', function() {
-  const options = { devices: makeDevices(['DEV001', 'DEV002']) };
-  const filters = { deviceInclude: ['DEV001'] };
-  const suggestions = PresetService.getSuggestions(options, filters);
-  const ids = makeSuggestionIds(suggestions);
-  return assertEqual(ids.includes('focus_top_device'), false, 'Should skip if deviceInclude already set');
+runTest('Returns empty object when no fields have data', function() {
+  const options = { components: [], logLevels: [], totalLogs: 0 };
+  const suggestions = PresetService.getPresetSuggestions(options);
+  return assertEqual(Object.keys(suggestions).length, 0, 'All-empty arrays should produce no suggestions');
 });
 
 // ─── Component suggestions ────────────────────────────────────────────────────
 
-printSection('PresetService.getSuggestions — component suggestions');
+printSection('PresetService.getPresetSuggestions — component suggestions');
 
 runTest('Suggests exclude_top_components when 5+ components exist', function() {
   const options = { components: makeComponents(['A', 'B', 'C', 'D', 'E']) };
-  const suggestions = PresetService.getSuggestions(options, {});
-  const ids = makeSuggestionIds(suggestions);
+  const suggestions = PresetService.getPresetSuggestions(options);
+  const ids = getSuggestionIds(suggestions);
   return assertEqual(ids.includes('exclude_top_components'), true, 'Should suggest exclude_top_components');
 });
 
 runTest('No exclude_top_components when fewer than 5 components', function() {
   const options = { components: makeComponents(['A', 'B', 'C']) };
-  const suggestions = PresetService.getSuggestions(options, {});
-  const ids = makeSuggestionIds(suggestions);
+  const suggestions = PresetService.getPresetSuggestions(options);
+  const ids = getSuggestionIds(suggestions);
   return assertEqual(ids.includes('exclude_top_components'), false, 'Should not suggest with < 5 components');
 });
 
 runTest('exclude_top_components caps at 10 entries', function() {
   const names = Array.from({ length: 15 }, (_, i) => 'Comp' + i);
   const options = { components: makeComponents(names) };
-  const suggestions = PresetService.getSuggestions(options, {});
-  const suggestion = suggestions.find(s => s.id === 'exclude_top_components');
+  const suggestions = PresetService.getPresetSuggestions(options);
+  const suggestion = suggestions['exclude_top_components'];
   return assertEqual(
     suggestion && suggestion.filters.componentExclude.length <= 10,
     true,
@@ -110,74 +66,47 @@ runTest('exclude_top_components caps at 10 entries', function() {
   );
 });
 
-runTest('Suggests focus_top_component when any component exists', function() {
-  const options = { components: makeComponents(['TopComp']) };
-  const suggestions = PresetService.getSuggestions(options, {});
-  const ids = makeSuggestionIds(suggestions);
-  return assertEqual(ids.includes('focus_top_component'), true, 'Should suggest focus_top_component');
-});
-
-runTest('No component suggestions when componentInclude already applied', function() {
-  const options = { components: makeComponents(['A', 'B', 'C', 'D', 'E', 'F']) };
-  const filters = { componentInclude: ['A'] };
-  const suggestions = PresetService.getSuggestions(options, filters);
-  const ids = makeSuggestionIds(suggestions);
-  return assertEqual(ids.includes('focus_top_component'), false, 'Should skip focus_top_component when componentInclude set');
-});
-
-runTest('No exclude_top_components when componentExclude already applied', function() {
-  const options = { components: makeComponents(['A', 'B', 'C', 'D', 'E']) };
-  const filters = { componentExclude: ['A'] };
-  const suggestions = PresetService.getSuggestions(options, filters);
-  const ids = makeSuggestionIds(suggestions);
-  return assertEqual(ids.includes('exclude_top_components'), false, 'Should skip exclude_top_components when componentExclude set');
-});
 
 // ─── Log level suggestions ────────────────────────────────────────────────────
 
-printSection('PresetService.getSuggestions — log level suggestions');
+printSection('PresetService.getPresetSuggestions — log level suggestions');
 
 runTest('Suggests errors_and_warnings when ERROR and WARN present', function() {
   const options = { logLevels: makeLogLevels(['DEBUG', 'INFO', 'WARN', 'ERROR']) };
-  const suggestions = PresetService.getSuggestions(options, {});
-  const ids = makeSuggestionIds(suggestions);
+  const suggestions = PresetService.getPresetSuggestions(options);
+  const ids = getSuggestionIds(suggestions);
   return assertEqual(ids.includes('errors_and_warnings'), true, 'Should suggest errors_and_warnings');
 });
 
 runTest('Suggests errors_only when ERROR level present', function() {
   const options = { logLevels: makeLogLevels(['DEBUG', 'INFO', 'ERROR']) };
-  const suggestions = PresetService.getSuggestions(options, {});
-  const ids = makeSuggestionIds(suggestions);
+  const suggestions = PresetService.getPresetSuggestions(options);
+  const ids = getSuggestionIds(suggestions);
   return assertEqual(ids.includes('errors_only'), true, 'Should suggest errors_only when ERROR present');
 });
 
 runTest('No errors_only when ERROR not present', function() {
   const options = { logLevels: makeLogLevels(['DEBUG', 'INFO', 'WARN']) };
-  const suggestions = PresetService.getSuggestions(options, {});
-  const ids = makeSuggestionIds(suggestions);
+  const suggestions = PresetService.getPresetSuggestions(options);
+  const ids = getSuggestionIds(suggestions);
   return assertEqual(ids.includes('errors_only'), false, 'Should not suggest errors_only without ERROR level');
 });
 
-runTest('No log level suggestions when logLevelInclude already applied', function() {
-  const options = { logLevels: makeLogLevels(['DEBUG', 'INFO', 'WARN', 'ERROR']) };
-  const filters = { logLevelInclude: ['ERROR'] };
-  const suggestions = PresetService.getSuggestions(options, filters);
-  const ids = makeSuggestionIds(suggestions);
-  const hasLevelSuggestion = ids.includes('errors_and_warnings') || ids.includes('errors_only');
-  return assertEqual(hasLevelSuggestion, false, 'Should skip level suggestions when logLevelInclude already set');
+runTest('No errors_and_warnings when neither ERROR nor WARN present', function() {
+  const options = { logLevels: makeLogLevels(['DEBUG', 'INFO']) };
+  const suggestions = PresetService.getPresetSuggestions(options);
+  const ids = getSuggestionIds(suggestions);
+  return assertEqual(ids.includes('errors_and_warnings'), false, 'Should not suggest errors_and_warnings without WARN/ERROR');
 });
 
-// ─── Suggestion shape ─────────────────────────────────────────────────────────
+// ─── Suggestion object shape ──────────────────────────────────────────────────
 
-printSection('PresetService.getSuggestions — suggestion object shape');
+printSection('PresetService.getPresetSuggestions — suggestion object shape');
 
 runTest('Each suggestion has required fields: id, label, description, filters', function() {
-  const options = {
-    devices: makeDevices(['D1', 'D2']),
-    logLevels: makeLogLevels(['ERROR', 'WARN'])
-  };
-  const suggestions = PresetService.getSuggestions(options, {});
-  const valid = suggestions.every(s =>
+  const options = { logLevels: makeLogLevels(['ERROR', 'WARN']) };
+  const suggestions = PresetService.getPresetSuggestions(options);
+  const valid = Object.values(suggestions).every(s =>
     typeof s.id === 'string' &&
     typeof s.label === 'string' &&
     typeof s.description === 'string' &&
@@ -187,42 +116,110 @@ runTest('Each suggestion has required fields: id, label, description, filters', 
 });
 
 runTest('Suggestion filters values are non-empty arrays', function() {
-  const options = {
-    devices: makeDevices(['D1', 'D2']),
-    components: makeComponents(['A', 'B', 'C', 'D', 'E'])
-  };
-  const suggestions = PresetService.getSuggestions(options, {});
-  const valid = suggestions.every(s =>
+  const options = { components: makeComponents(['A', 'B', 'C', 'D', 'E']) };
+  const suggestions = PresetService.getPresetSuggestions(options);
+  const valid = Object.values(suggestions).every(s =>
     Object.values(s.filters).every(v => Array.isArray(v) && v.length > 0)
   );
   return assertEqual(valid, true, 'All filter values should be non-empty arrays');
 });
 
+runTest('Suggestion id matches its key in the map', function() {
+  const options = {
+    components: makeComponents(['A', 'B', 'C', 'D', 'E']),
+    logLevels: makeLogLevels(['ERROR'])
+  };
+  const suggestions = PresetService.getPresetSuggestions(options);
+  const valid = Object.entries(suggestions).every(([key, s]) => s.id === key);
+  return assertEqual(valid, true, 'Each suggestion id should match its map key');
+});
+
 // ─── Combined scenario ────────────────────────────────────────────────────────
 
-printSection('PresetService.getSuggestions — combined scenario');
+printSection('PresetService.getPresetSuggestions — combined scenario');
 
 runTest('Multiple suggestion types returned for rich data set', function() {
   const options = {
-    devices: makeDevices(['D1', 'D2', 'D3']),
     components: makeComponents(['A', 'B', 'C', 'D', 'E', 'F']),
-    threads: makeThreads(['T1', 'T2', 'T3', 'T4', 'T5', 'T6']),
     logLevels: makeLogLevels(['DEBUG', 'INFO', 'WARN', 'ERROR']),
     totalLogs: 5000
   };
-  const suggestions = PresetService.getSuggestions(options, {});
-  return assertEqual(suggestions.length >= 4, true, 'Should return at least 4 suggestions for rich data');
+  const suggestions = PresetService.getPresetSuggestions(options);
+  // expects: exclude_top_components, errors_and_warnings, errors_only
+  return assertEqual(Object.keys(suggestions).length >= 3, true, 'Should return at least 3 suggestions for rich data');
 });
 
-runTest('After applying device filter, device suggestion disappears', function() {
-  const options = {
-    devices: makeDevices(['D1', 'D2', 'D3']),
-    components: makeComponents(['A', 'B', 'C', 'D', 'E'])
-  };
-  const filtersAfterStep1 = { deviceInclude: ['D1'] };
-  const suggestions = PresetService.getSuggestions(options, filtersAfterStep1);
-  const ids = makeSuggestionIds(suggestions);
-  return assertEqual(ids.includes('focus_top_device'), false, 'focus_top_device should not reappear after being applied');
+// ─── applyPreset ──────────────────────────────────────────────────────────────
+
+printSection('PresetService.applyPreset');
+
+runTest('No-op when filters has no preset field', function() {
+  const filters = { logLevelInclude: ['ERROR'] };
+  PresetService.applyPreset(filters, {});
+  return assertEqual(filters, { logLevelInclude: ['ERROR'] }, 'filters should be unchanged');
+});
+
+runTest('No-op when preset is empty string', function() {
+  const filters = { preset: '' };
+  PresetService.applyPreset(filters, {});
+  return assertEqual(Object.keys(filters), ['preset'], 'no extra keys should be added');
+});
+
+runTest('No-op when preset is empty array', function() {
+  const filters = { preset: [] };
+  PresetService.applyPreset(filters, {});
+  return assertEqual(Object.keys(filters), ['preset'], 'no extra keys should be added');
+});
+
+runTest('Applies preset by string id — errors_only', function() {
+  // presets map is computed from getPresetSuggestions, then passed to applyPreset
+  const presets = PresetService.getPresetSuggestions({ logLevels: makeLogLevels(['INFO', 'ERROR']) });
+  const filters = { preset: 'errors_only' };
+  PresetService.applyPreset(filters, presets);
+  return assertEqual(filters.logLevelInclude, ['ERROR'], 'should add logLevelInclude: [ERROR]');
+});
+
+runTest('Applies preset by array id — errors_only', function() {
+  const presets = PresetService.getPresetSuggestions({ logLevels: makeLogLevels(['INFO', 'ERROR']) });
+  const filters = { preset: ['errors_only'] };
+  PresetService.applyPreset(filters, presets);
+  return assertEqual(filters.logLevelInclude, ['ERROR'], 'should add logLevelInclude: [ERROR]');
+});
+
+runTest('Applies exclude_top_components preset', function() {
+  const presets = PresetService.getPresetSuggestions({ components: makeComponents(['A', 'B', 'C', 'D', 'E']) });
+  const filters = { preset: 'exclude_top_components' };
+  PresetService.applyPreset(filters, presets);
+  return assertEqual(Array.isArray(filters.componentExclude) && filters.componentExclude.length === 5, true, 'should exclude 5 components');
+});
+
+runTest('Applies multiple presets from array', function() {
+  const presets = PresetService.getPresetSuggestions({
+    components: makeComponents(['A', 'B', 'C', 'D', 'E']),
+    logLevels: makeLogLevels(['INFO', 'ERROR'])
+  });
+  const filters = { preset: ['exclude_top_components', 'errors_only'] };
+  PresetService.applyPreset(filters, presets);
+  return assertEqual(
+    Array.isArray(filters.componentExclude) && filters.logLevelInclude[0] === 'ERROR',
+    true,
+    'should apply both presets'
+  );
+});
+
+runTest('Unknown preset id is skipped without throwing', function() {
+  const presets = PresetService.getPresetSuggestions({ logLevels: makeLogLevels(['ERROR']) });
+  const filters = { preset: 'nonexistent_preset' };
+  const warnings = [];
+  PresetService.applyPreset(filters, presets, (msg) => warnings.push(msg));
+  return assertEqual(warnings.length, 1, 'should log one warning for unknown preset');
+});
+
+runTest('Preset filters reflect the snapshot used to build presets', function() {
+  const presets = PresetService.getPresetSuggestions({ components: makeComponents(['A', 'B', 'C', 'D', 'E']) });
+  const filters = { preset: 'exclude_top_components' };
+  PresetService.applyPreset(filters, presets);
+  return assertEqual(filters.componentExclude, ['A', 'B', 'C', 'D', 'E'], 'should exclude exactly the 5 snapshot components');
 });
 
 printSummary('PRESET SERVICE');
