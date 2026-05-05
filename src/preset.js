@@ -81,6 +81,16 @@ class PresetService {
     try {
       const raw = fs.readFileSync(presetsPath, 'utf-8');
       const snapshotPresets = JSON.parse(raw) || {};
+
+      // Warn when a snapshot entry shadows a user-defined preset with the same id.
+      // This typically means the preset was part of the codebase at scan time and
+      // was written into neuf-presets.json.  Edits to preset.json won't take effect
+      // for those ids until the database is rebuilt (delete neuf-logs.db and re-scan).
+      const shadowed = Object.keys(userPresets).filter(id => id in snapshotPresets);
+      if (shadowed.length > 0) {
+        logger(`⚠️  The following preset(s) in preset.json are shadowed by the scan-time snapshot and won't reflect your edits until you rebuild the database: ${shadowed.join(', ')}`);
+      }
+
       // Snapshot (data-derived) presets override user presets on key collision
       return { ...userPresets, ...snapshotPresets };
     } catch (e) {

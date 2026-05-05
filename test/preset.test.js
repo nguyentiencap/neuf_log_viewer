@@ -19,6 +19,20 @@ function makeLogLevels(levels) {
   return levels.map(level => ({ log_level: level, count: 100 }));
 }
 
+/** Recursively delete a directory; works on Node.js 12+ (no fs.rmSync required). */
+function rmdirRec(dir) {
+  if (!fs.existsSync(dir)) return;
+  fs.readdirSync(dir).forEach(function(entry) {
+    const full = path.join(dir, entry);
+    if (fs.lstatSync(full).isDirectory()) {
+      rmdirRec(full);
+    } else {
+      fs.unlinkSync(full);
+    }
+  });
+  fs.rmdirSync(dir);
+}
+
 // suggestions is an object map { [id]: { ... } }
 function getSuggestionIds(suggestions) {
   return Object.keys(suggestions);
@@ -331,7 +345,7 @@ runTest('Merges snapshot presets with user presets; snapshot takes precedence', 
       'should contain both user and snapshot presets, with snapshot winning on conflict'
     );
   } finally {
-    fs.rmSync(tmpDir, { recursive: true });
+    rmdirRec(tmpDir);
   }
 });
 
@@ -348,7 +362,29 @@ runTest('Returns user presets when snapshot file is malformed', function() {
       'should fall back to user presets and log warning when snapshot is malformed'
     );
   } finally {
-    fs.rmSync(tmpDir, { recursive: true });
+    rmdirRec(tmpDir);
+  }
+});
+
+runTest('Logs a warning when snapshot shadows user preset.json entries', function() {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'neuf-test-'));
+  const snapshotPath = path.join(tmpDir, 'neuf-presets.json');
+  const snapshot = {
+    exclude_endpoint_tester: {
+      id: 'exclude_endpoint_tester',
+      label: '📸 Snapshot version',
+      description: 'Shadowing user preset',
+      filters: { componentExclude: ['%Endpoint%'] }
+    }
+  };
+  fs.writeFileSync(snapshotPath, JSON.stringify(snapshot));
+  try {
+    const warnings = [];
+    PresetService.loadPreset(tmpDir, (msg) => warnings.push(msg));
+    const hasWarning = warnings.some(msg => msg.includes('exclude_endpoint_tester') && msg.includes('shadowed'));
+    return assertEqual(hasWarning, true, 'should warn that exclude_endpoint_tester is shadowed by the snapshot');
+  } finally {
+    rmdirRec(tmpDir);
   }
 });
 
