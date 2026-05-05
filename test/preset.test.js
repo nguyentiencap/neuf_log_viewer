@@ -3,6 +3,9 @@
  * Tests for the PresetService dynamic filter suggestion logic
  */
 
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
 const { assertEqual, runTest, printSection, printSummary } = require('./test-helpers');
 const { PresetService } = require('../src/preset');
 
@@ -220,6 +223,69 @@ runTest('Preset filters reflect the snapshot used to build presets', function() 
   const filters = { preset: 'exclude_top_components' };
   PresetService.applyPreset(filters, presets);
   return assertEqual(filters.componentExclude, ['A', 'B', 'C', 'D', 'E'], 'should exclude exactly the 5 snapshot components');
+});
+
+// ─── loadUserPresets ──────────────────────────────────────────────────────────
+
+printSection('PresetService.loadUserPresets');
+
+runTest('Returns empty object when file does not exist', function() {
+  const result = PresetService.loadUserPresets('/tmp/nonexistent-preset.json');
+  return assertEqual(Object.keys(result).length, 0, 'should return empty object for missing file');
+});
+
+runTest('Loads and parses a valid preset JSON file', function() {
+  const tmpFile = path.join(os.tmpdir(), 'test-preset-' + process.pid + '-' + Math.random().toString(36).slice(2) + '.json');
+  const presets = {
+    test_preset: {
+      id: 'test_preset',
+      label: '🧪 Test preset',
+      description: 'A test preset',
+      filters: { componentExclude: ['%Test%'] }
+    }
+  };
+  fs.writeFileSync(tmpFile, JSON.stringify(presets));
+  try {
+    const result = PresetService.loadUserPresets(tmpFile);
+    return assertEqual(result.test_preset && result.test_preset.id, 'test_preset', 'should load test_preset from file');
+  } finally {
+    fs.unlinkSync(tmpFile);
+  }
+});
+
+runTest('Returns empty object for a malformed JSON file', function() {
+  const tmpFile = path.join(os.tmpdir(), 'test-preset-bad-' + process.pid + '-' + Math.random().toString(36).slice(2) + '.json');
+  fs.writeFileSync(tmpFile, 'not valid json {{{');
+  try {
+    const warnings = [];
+    const result = PresetService.loadUserPresets(tmpFile, (msg) => warnings.push(msg));
+    return assertEqual(Object.keys(result).length === 0 && warnings.length === 1, true, 'should return empty object and log warning');
+  } finally {
+    fs.unlinkSync(tmpFile);
+  }
+});
+
+runTest('User presets from preset.json at project root are loadable', function() {
+  // Verifies the actual preset.json ships with required fields on every entry
+  const presets = PresetService.loadUserPresets();
+  const valid = Object.values(presets).every(p =>
+    typeof p.id === 'string' &&
+    typeof p.label === 'string' &&
+    typeof p.description === 'string' &&
+    typeof p.filters === 'object'
+  );
+  return assertEqual(valid, true, 'all entries in preset.json should have id, label, description, filters');
+});
+
+runTest('Static presets from preset.json can be applied via applyPreset', function() {
+  const userPresets = PresetService.loadUserPresets();
+  const filters = { preset: 'exclude_endpoint_tester' };
+  PresetService.applyPreset(filters, userPresets);
+  return assertEqual(
+    Array.isArray(filters.componentExclude) && filters.componentExclude.includes('%Endpoint%'),
+    true,
+    'should apply exclude_endpoint_tester from preset.json'
+  );
 });
 
 printSummary('PRESET SERVICE');

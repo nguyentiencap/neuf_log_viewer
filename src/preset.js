@@ -26,6 +26,33 @@ class PresetService {
   }
 
   /**
+   * Get path to user-defined preset JSON file (preset.json at project root).
+   * @returns {string}
+   */
+  static getUserPresetsPath() {
+    return path.join(__dirname, '..', 'preset.json');
+  }
+
+  /**
+   * Load user-defined presets from the preset.json file at the project root.
+   * Returns an empty object if the file is absent or cannot be parsed.
+   * @param {string|null} jsonPath - Override path (defaults to getUserPresetsPath())
+   * @param {Function} logger - Logger function
+   * @returns {Object} Map of preset id to preset object
+   */
+  static loadUserPresets(jsonPath = null, logger = console.log) {
+    const filePath = jsonPath || PresetService.getUserPresetsPath();
+    if (!fs.existsSync(filePath)) return {};
+    try {
+      const raw = fs.readFileSync(filePath, 'utf-8');
+      return JSON.parse(raw) || {};
+    } catch (e) {
+      logger(`⚠️  Failed to load user presets: ${e.message}`);
+      return {};
+    }
+  }
+
+  /**
    * Save filter options snapshot to JSON file.
    * Called once after scan so presets always reflect original data.
    * @param {string} presetsPath - Full path to the JSON file
@@ -139,46 +166,6 @@ class PresetService {
          };
        }
      }
-
-     // ── LIKE pattern presets — always available ───────────────────────────────
-     suggestions["exclude_endpoint_tester"] = {
-       id: 'exclude_endpoint_tester',
-       label: '🔌 Exclude Endpoint Tester components',
-       description: 'Exclude all components matching %Endpoint%',
-       filters: { componentExclude: ['%Endpoint%'] }
-     };
-     suggestions["exclude_historical_data"] = {
-       id: 'exclude_historical_data',
-       label: '📜 Exclude Historical data components',
-       description: 'Exclude all components matching %Historical%',
-       filters: { componentExclude: ['%Historical%'] }
-     };
-     suggestions["exclude_dws"] = {
-       id: 'exclude_dws',
-       label: '📜 Exclude DWS components',
-       description: 'Exclude all components matching Dws%',
-       filters: { componentExclude: ['Dws%'] }
-     };
-     suggestions["exclude_wiring"] = {
-       id: 'exclude_wiring',
-       label: '📜 Exclude Wiring components',
-       description: 'Exclude all components matching %Wiring%',
-       filters: { componentExclude: ['%Wiring%'] }
-     };
-
-     // ── Component null suggestions ────────────────────────────────────────────
-     suggestions["component_not_null"] = {
-       id: 'component_not_null',
-       label: '🔍 Show only logs with component',
-       description: 'Show only logs that have a component name',
-       filters: { componentExclude: [null] }
-     };
-     suggestions["component_null"] = {
-       id: 'component_null',
-       label: '🔍 Show only logs without component',
-       description: 'Show only logs that have no component name (empty)',
-       filters: { componentInclude: [null] }
-     };
 
      // ── Log level suggestions ─────────────────────────────────────────────────
      const hasErrors = logLevels.some(l => l.log_level === 'ERROR');
