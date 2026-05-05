@@ -5,14 +5,12 @@ Agent guidance for NEUF Log Viewer - Node.js log viewer with SQLite backend.
 ## Non-Obvious Patterns
 
 ### Entry Point & Database
-- CLI Entry: `node neuf-log-viewer-cli.js <command> <log-folder-path>` (commands: scan, clear, filter, options)
 - API Entry: `node neuf-log-viewer-api.js <log-folder-path>` or `npm start <log-folder-path>`
 - DB: `<log-folder>/log-filter-db/neuf-logs.db` (inside log folder, not project root)
 - Re-index: delete DB file and run scan command again
 
 ### Service Object Pattern
 - All modules use service classes with injected dependencies
-- Services instantiated in `neuf-log-viewer-cli.js` and `neuf-log-viewer-api.js`
 - Example: `NEUFLogService` receives `logParserService` and logger function
 
 ### Log Format Parsing (Critical)
