@@ -373,6 +373,74 @@ async function runAllTests() {
     return assertEqual(count, 2, 'LIKE search for "Connection" should match 2 rows');
   });
 
+  // --------------------------------------------------------------------------
+  printSection('executeFilterStep: time range (timeFrom / timeTo)');
+  // --------------------------------------------------------------------------
+
+  runTest('timeFrom filters out earlier rows', () => {
+    const svc = buildDatabaseService(SQL, SEED_LOGS);
+    // timeFrom = 09:02 → rows at 09:02, 09:03, 10:00, 10:01 = 4 rows
+    const { count } = svc.executeFilterStep(
+      { timeFrom: getTimeBucket('2026.04.28 09:02:00.000') },
+      'logs',
+      'filter_step_1'
+    );
+    return assertEqual(count, 4, 'timeFrom=09:02 should include 4 rows (09:02 onwards)');
+  });
+
+  runTest('timeTo filters out later rows', () => {
+    const svc = buildDatabaseService(SQL, SEED_LOGS);
+    // timeTo = 09:01 → rows at 09:00, 09:01 = 2 rows
+    const { count } = svc.executeFilterStep(
+      { timeTo: getTimeBucket('2026.04.28 09:01:00.000') },
+      'logs',
+      'filter_step_1'
+    );
+    return assertEqual(count, 2, 'timeTo=09:01 should include 2 rows (up to 09:01)');
+  });
+
+  runTest('timeFrom + timeTo keeps only rows in range', () => {
+    const svc = buildDatabaseService(SQL, SEED_LOGS);
+    // 09:01 to 09:03 → rows at 09:01, 09:02, 09:03 = 3 rows
+    const { count } = svc.executeFilterStep(
+      {
+        timeFrom: getTimeBucket('2026.04.28 09:01:00.000'),
+        timeTo:   getTimeBucket('2026.04.28 09:03:00.000')
+      },
+      'logs',
+      'filter_step_1'
+    );
+    return assertEqual(count, 3, 'timeFrom=09:01 timeTo=09:03 should include 3 rows');
+  });
+
+  runTest('timeFrom + timeTo with no matching rows returns 0', () => {
+    const svc = buildDatabaseService(SQL, SEED_LOGS);
+    const { count } = svc.executeFilterStep(
+      {
+        timeFrom: getTimeBucket('2026.04.28 11:00:00.000'),
+        timeTo:   getTimeBucket('2026.04.28 11:59:00.000')
+      },
+      'logs',
+      'filter_step_1'
+    );
+    return assertEqual(count, 0, 'No rows in 11:00-11:59 range should return 0');
+  });
+
+  runTest('timeFrom + timeTo combined with logLevelInclude narrows correctly', () => {
+    const svc = buildDatabaseService(SQL, SEED_LOGS);
+    // 09:00 to 09:03 → 4 rows, filtered ERROR → 2 rows (09:00 + 09:03)
+    const { count } = svc.executeFilterStep(
+      {
+        timeFrom: getTimeBucket('2026.04.28 09:00:00.000'),
+        timeTo:   getTimeBucket('2026.04.28 09:03:00.000'),
+        logLevelInclude: ['ERROR']
+      },
+      'logs',
+      'filter_step_1'
+    );
+    return assertEqual(count, 2, 'timeFrom/timeTo + ERROR should return 2 rows');
+  });
+
   printSummary('FILTER CHAIN TEST SUITE');
 }
 

@@ -97,7 +97,6 @@ class NEUFLogService {
    */
   normalizeFilters(filters) {
     const filterFields = [
-      'timeBucket',
       'filenameInclude', 'filenameExclude',
       'logLevelInclude', 'logLevelExclude',
       'threadInclude', 'threadExclude',
@@ -117,6 +116,13 @@ class NEUFLogService {
 
     // Remove empty search
     if (!filters.search) delete filters.search;
+
+    if (filters.timeFrom) {
+        filters.timeFrom = logParserService.getTimeBucket(filters.timeFrom);
+    }
+    if (filters.timeTo) {
+      filters.timeTo = logParserService.getTimeBucket(filters.timeTo);
+    }
 
     return filters;
   }
@@ -323,31 +329,6 @@ class NEUFLogService {
 
   // -------- Filter pipeline --------
 
-  /**
-   * Normalize time bucket filter fields from label strings to Unix timestamps
-   * @param {Object} filters
-   * @returns {Object} filters with timeBucketFrom/timeBucketTo as numbers
-   */
-  _normalizeTimeBucketFilters(filters) {
-    if (!filters) return filters;
-    const result = { ...filters };
-    if (filters.timeBucket != null) {
-      result.timeFrom = this.scannerService.getTimeBucket(filters.timeBucket);
-      result.timeTo = result.timeFrom + 3600; //60 mins bucket
-      return result;
-    }
-
-    result.timeFrom = 0;
-    result.timeTo = Number.MAX_SAFE_INTEGER;
-    if (result.timeFrom != null) {
-      result.timeFrom = this.scannerService.getTimeBucket(filters.timeFrom);
-    }
-    if (result.timeTo != null) {
-      result.timeTo = this.scannerService.getTimeBucket(filters.timeTo);
-    }
-
-    return result;
-  }
 
   /**
    * Compute the output table name for a given filters object.
@@ -411,7 +392,7 @@ class NEUFLogService {
 
     const { page, pageSize } = this._getPagingOptions(options);
 
-    const normalizedFilters = this._normalizeTimeBucketFilters(filters || {});
+    const normalizedFilters = filters || {};
     const filtersKey = JSON.stringify(normalizedFilters);
     const sourceTable = 'logs';
     const outputTable = this._getFilterOutputTable(filtersKey);

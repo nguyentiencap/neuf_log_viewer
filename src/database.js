@@ -166,10 +166,23 @@ class DatabaseService {
         } else if (excludeNulls) {
           where += ` AND ${dbColumn} IS NOT NULL`;
         }
-        // NOT LIKE excludes — preserve NULL rows (NOT LIKE on NULL = NULL/false)
-        for (const pattern of likeExclude) {
-          where += ` AND (${dbColumn} NOT LIKE ? OR ${dbColumn} IS NULL)`;
-          params.push(pattern);
+        // NOT LIKE excludes — combine all patterns into one clause for performance
+        // When excludeNulls is true, IS NOT NULL already handled above, so no null-preservation needed
+        if (likeExclude.length === 1) {
+          if (excludeNulls) {
+            where += ` AND ${dbColumn} NOT LIKE ?`;
+          } else {
+            where += ` AND (${dbColumn} NOT LIKE ? OR ${dbColumn} IS NULL)`;
+          }
+          params.push(likeExclude[0]);
+        } else if (likeExclude.length > 1) {
+          const notLikeParts = likeExclude.map(() => `${dbColumn} NOT LIKE ?`).join(' AND ');
+          if (excludeNulls) {
+            where += ` AND (${notLikeParts})`;
+          } else {
+            where += ` AND (${dbColumn} IS NULL OR (${notLikeParts}))`;
+          }
+          params.push(...likeExclude);
         }
       }
     };
@@ -182,11 +195,11 @@ class DatabaseService {
     addFilterClause('component', 'component_name', componentInclude, componentExclude);
 
     // Time bucket range filter using BETWEEN (Unix timestamps)
-    if (excludeField !== 'timeBucket') {
-      if (filters.timeFrom != null && filters.timeTo != null) {
-        where += ' AND time_bucket BETWEEN ? AND ?';
-        params.push(filters.timeFrom, filters.timeTo);
-      }
+    if (filters.timeFrom != null || filters.timeTo != null) {
+      const timeFrom = filters.timeFrom != null ? filters.timeFrom : 0;
+      const timeTo = filters.timeTo != null ? filters.timeTo : 2147483647;
+      where += ' AND time_bucket BETWEEN ? AND ?';
+      params.push(timeFrom, timeTo);
     }
 
     // Search text: always try both LIKE (plain text) and REGEXP (pattern) with OR

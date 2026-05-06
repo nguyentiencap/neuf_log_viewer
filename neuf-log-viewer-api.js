@@ -7,9 +7,9 @@
  * Usage: node neuf-log-viewer-api.js <folderPath>
  *
  * Provides REST API endpoints for log analysis:
- * - POST /filter_log - Filter logs with pagination
+ * - POST /filter_log - Filter logs with pagination (includes filterOptions in response)
  * - POST /export_log - Export filtered logs
- * - POST /filter_option - Get available filter options
+ * - POST /preset_suggestions - Get preset filter suggestions
  */
 
 const express = require('express');
@@ -99,9 +99,8 @@ function parseFiltersFromRequest(query) {
     componentExclude: query.componentExclude || [],
     
     // Other filters
-    timeBucket: query.timeBucket || [],
-    timeFrom: query.timeFrom || [],
-    timeTo: query.timeTo || [],
+    timeFrom: query.timeFrom || null,
+    timeTo: query.timeTo || null,
     search: query.search || '',
     contextLines: parseInt(query.contextLines) || 0,
     strictContext: query.strictContext === true || query.strictContext === 'true',
@@ -114,37 +113,6 @@ function parseFiltersFromRequest(query) {
 
 
 
-/**
- * POST /filter_option
- * Get available filter options based on current filters
- * Body: {
- *   filters: {
- *     // Same as filter_log
- *   },
- *   limitedOptions: boolean (optional, default: true) - Limit thread_name and components to top 20,
- *   inputTable: string (optional) - output table returned by /filter_log
- * }
- */
-app.post('/filter_option', async (req, res) => {
-  try {
-    const { filters = {}, limitedOptions = true, inputTable = null } = req.body;
-
-    // Parse and normalize filters (API layer responsibility)
-    const parsedFilters = parseFiltersFromRequest(filters);
-
-    // Get filter options (loadDatabase will check if DB exists)
-    const result = await logService.getFilterOptions(FOLDER_PATH, inputTable, limitedOptions);
-    res.json(result);
-
-  } catch (error) {
-    console.error('❌ Filter options error:', error);
-    console.error('Stack trace:', error.stack);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
 
 /**
  * POST /preset_suggestions
@@ -205,8 +173,11 @@ app.post('/filter_log', async (req, res) => {
 
     const result = await logService.filterLogs(FOLDER_PATH, parsedFilters, { page, pageSize });
 
+    // Fetch filter options from the filtered output table in the same request
+    const filterOptionsResult = await logService.getFilterOptions(FOLDER_PATH, result.outputTable);
+
     if (raw) {
-      res.json(result);
+      res.json({ ...result, filterOptions: filterOptionsResult.data });
       return;
     }
 
@@ -216,7 +187,7 @@ app.post('/filter_log', async (req, res) => {
       formattedLog: logService.formatLogEntry(log, "api")
     }));
 
-    res.json({ ...result, logs: formattedLogs });
+    res.json({ ...result, logs: formattedLogs, filterOptions: filterOptionsResult.data });
 
   } catch (error) {
     console.error('❌ Filter chain error:', error);
@@ -323,11 +294,10 @@ async function main() {
       console.log(`📁 Folder path: ${FOLDER_PATH}`);
       console.log('');
       console.log('📋 Available endpoints:');
-      console.log('  POST   /filter_log      - Filter logs');
-      console.log('  POST   /export_log      - Export filtered logs');
-      console.log('  POST   /filter_option         - Get filter options');
-      console.log('  POST   /preset_suggestions   - Get dynamic filter suggestions');
-      console.log('  GET    /health                - Health check');
+      console.log('  POST   /filter_log           - Filter logs (includes filterOptions)');
+      console.log('  POST   /export_log           - Export filtered logs');
+      console.log('  POST   /preset_suggestions   - Get preset filter suggestions');
+      console.log('  GET    /health               - Health check');
       console.log('');
       console.log('Press Ctrl+C to stop the server');
       console.log('');

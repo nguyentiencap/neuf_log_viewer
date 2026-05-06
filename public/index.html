@@ -6,6 +6,7 @@
   <title>NEUF Log Viewer</title>
   <link rel="stylesheet" href="styles.css">
   <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="helper.js"></script>
 </head>
 <body>
   <!-- Status Bar -->
@@ -67,35 +68,44 @@
       <label>🔎 Search Message (support REGEX)</label>
       <input type="text" id="searchFilter" placeholder="Enter search text...">
       <div style="margin-top: 8px;">
-        <label style="font-size: 11px; font-weight: normal; color: #6c757d;">
-          Context Lines (before/after):
-          <input type="number" id="contextLinesFilter" min="0" max="50" value="0"
-                 style="width: 60px; padding: 4px; margin-left: 5px; border: 1px solid #ced4da; border-radius: 3px; font-size: 11px;">
-        </label>
+        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: nowrap;">
+          <label style="font-size: 11px; font-weight: normal; color: #6c757d; display: flex; align-items: center; gap: 4px; white-space: nowrap; flex-shrink: 0;">
+            Context lines:
+            <input type="number" id="contextLinesFilter" min="0" max="50" value="0"
+                   style="width: 50px; padding: 4px; border: 1px solid #ced4da; border-radius: 3px; font-size: 11px;">
+          </label>
+          <label style="font-size: 11px; font-weight: normal; color: #6c757d; display: flex; align-items: center; gap: 4px; cursor: pointer; white-space: nowrap;">
+            <input type="checkbox" id="strictContextFilter" checked>
+            Strict context
+          </label>
+        </div>
         <div style="font-size: 10px; color: #6c757d; margin-top: 4px; line-height: 1.4;">
           💡 Set to 0 for exact matches only. Set to N to include N lines before and after each match.
-        </div>
-        <div style="margin-top: 6px;">
-          <label style="font-size: 11px; font-weight: normal; color: #6c757d; display: flex; align-items: center; gap: 5px; cursor: pointer;">
-            <input type="checkbox" id="strictContextFilter" checked>
-            Strict context (only lines matching other filters)
-          </label>
         </div>
       </div>
     </div>
     
-    <!-- Time Filter (Include only) -->
+    <!-- Time Filter -->
     <div class="filter-group">
       <div class="filter-header" onclick="toggleFilter(this)">
-        <span>⏰ Time (1-hour intervals)</span>
+        <span>⏰ Time</span>
         <span class="toggle">▼</span>
       </div>
       <div class="filter-content">
-        <div class="checkbox-item select-all">
-          <input type="checkbox" id="selectAll_timeBucket" onchange="toggleAll(this, 'timeBucket')">
-          <label for="selectAll_timeBucket"><strong>Select All / Deselect All</strong></label>
+        <!-- Time range text inputs -->
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+          <div style="flex: 1;">
+            <label style="font-size: 11px; color: #6c757d; display: block; margin-bottom: 4px;">From (YYYY.MM.DD HH:mm):</label>
+            <input type="text" id="timeFromFilter" placeholder="e.g. 2026.04.28 09:25" style="width: 100%; padding: 4px 6px; border: 1px solid #ced4da; border-radius: 3px; font-size: 11px; box-sizing: border-box;">
+          </div>
+          <div style="flex: 1;">
+            <label style="font-size: 11px; color: #6c757d; display: block; margin-bottom: 4px;">To (YYYY.MM.DD HH:mm):</label>
+            <input type="text" id="timeToFilter" placeholder="e.g. 2026.04.28 09:35" style="width: 100%; padding: 4px 6px; border: 1px solid #ced4da; border-radius: 3px; font-size: 11px; box-sizing: border-box;">
+          </div>
         </div>
         <div class="checkbox-divider"></div>
+        <!-- 1-hour interval buckets (click to auto-fill timeFrom/timeTo) -->
+        <div style="font-size: 11px; color: #6c757d; margin-bottom: 4px;">1-hour intervals (click to fill time range):</div>
         <div id="timeBucketCheckboxes" class="checkbox-list"></div>
       </div>
     </div>

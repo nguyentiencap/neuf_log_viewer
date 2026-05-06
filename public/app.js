@@ -16,10 +16,9 @@
     filters: {},
     inputTable: null,
     filterOptions: {},
-    presetSteps: [],    // history of applied preset suggestions
+    presetSteps: new Map(),  // applied preset suggestions: id -> label
     activeFilterStep: 0,  // step number to query filter options from (0 = logs, N = filter_N)
-    presetSuggestionsLoaded: false,  // flag to ensure /preset_suggestions is called only once
-    presetSuggestions: []  // cached suggestions from the single API call
+    presetSuggestions: []  // cached suggestions loaded once on startup
   };
 
   // API base URL
@@ -43,6 +42,18 @@
     // Show all checkbox
     $('#showAllCheckbox').on('change', function() {
       toggleLogTruncation();
+    });
+
+    // Time bucket checkboxes: auto-fill timeFrom/timeTo if empty
+    $('#timeBucketCheckboxes').on('change', '.timeBucket-checkbox', function() {
+      if (!$(this).is(':checked')) return;
+      const bucketLabel = $(this).val();
+      if (!$('#timeFromFilter').val().trim()) {
+        $('#timeFromFilter').val(bucketLabel);
+      }
+      if (!$('#timeToFilter').val().trim()) {
+        $('#timeToFilter').val(addOneHour(bucketLabel));
+      }
     });
 
     // Pagination
@@ -125,6 +136,7 @@
       success: function(response) {
         if (response.databaseScanned) {
           loadLogs();
+          loadPresetSuggestions();
         } else {
           showStatus('⚠️ No database found. Please start the server with a log folder path.', 'warning');
           clearLogsDisplay();
@@ -136,91 +148,75 @@
     });
   }
 
-  /**
-   * Load filter options
-   */
-  function loadFilterOptions() {
-    const filtersPayload = buildRequestFilters();
-    $.ajax({
-      url: API_BASE + '/filter_option',
-      method: 'POST',
-      contentType: 'application/json',
-      data: JSON.stringify({
-        folderPath: state.folderPath,
-        filters: filtersPayload,
-        inputTable: state.inputTable
-      }),
-      success: function(response) {
-        if (response.success) {
-          state.filterOptions = response.data;
-          renderFilterOptions();
-          if (state.total < 1000) {
-            $('#presetGroup').hide();
-          } else if (!state.presetSuggestionsLoaded) {
-            state.presetSuggestionsLoaded = true;
-            loadPresetSuggestions();
-          }
-        }
-      },
-      error: function(xhr) {
-        const error = xhr.responseJSON ? xhr.responseJSON.error : 'Unknown error';
-        showStatus('❌ Failed to load filter options: ' + error, 'error');
-      }
-    });
-  }
 
   /**
-   * Load preset suggestions based on current filters
-   * Hidden when total logs is below 1000
+   * Load preset suggestions once on startup, then re-render the preset panel.
    */
   function loadPresetSuggestions() {
-    if (state.total < 1000) {
-      $('#presetGroup').hide();
-      return;
-    }
-    const filtersPayload = buildRequestFilters();
     $.ajax({
       url: API_BASE + '/preset_suggestions',
       method: 'POST',
       contentType: 'application/json',
-      data: JSON.stringify({
-        filters: filtersPayload,
-        inputTable: state.inputTable
-      }),
+      data: JSON.stringify({}),
       success: function(response) {
-        if (response.success) {
-          state.presetSuggestions = response.suggestions || [];
-          renderPresetSuggestions(state.presetSuggestions);
-        }
+        state.presetSuggestions = response.success ? (response.suggestions || []) : [];
+        renderPresetPanel();
       },
       error: function() {
-        // Silently hide suggestions panel on error
-        $('#presetGroup').hide();
+        state.presetSuggestions = [];
       }
     });
   }
 
   /**
-   * Render preset suggestions as clickable links
-   * @param {Array} suggestions - List of suggestion objects
+   * Single render entry point — called after any state update.
+   * Handles all UI: filter options, preset panel, active filters.
    */
-  function renderPresetSuggestions(suggestions) {
-    const container = $('#presetSuggestions');
-    container.empty();
+  function renderAll() {
+    renderPresetPanel();
+    renderFilterOptions();
+    renderActiveFilters(state.presetSteps, state.filters, {
+      onRemovePreset: withReload(removePresetStep),
+      onRemoveArrayFilter: withReload(removeArrayFilter),
+      onRemoveSearch: withReload(removeSearchFilter),
+      onRemoveTimeRange: withReload(removeTimeRangeFilter)
+    });
+  }
 
-    if (!suggestions || suggestions.length === 0) {
+  /**
+   * Wrap a state-mutating function with page reset and log reload.
+   * @param {Function} mutateFn - Function that mutates state
+   * @returns {Function}
+   */
+  function withReload(mutateFn) {
+    return function() {
+      mutateFn.apply(null, arguments);
+      state.currentPage = 1;
+      loadLogs();
+    };
+  }
+
+  /**
+   * Render preset suggestions panel visibility and content.
+   * Hides panel when total < 1000, no suggestions, or all already applied.
+   */
+  function renderPresetPanel() {
+    const suggestions = state.presetSuggestions;
+
+    if (state.total < 1000 || !suggestions || suggestions.length === 0) {
       $('#presetGroup').hide();
       return;
     }
 
-    // Filter out already-applied presets
-    const appliedIds = new Set(state.presetSteps.map(function(s) { return s.id; }));
-    const visibleSuggestions = suggestions.filter(function(s) { return !appliedIds.has(s.id); });
+    const visibleSuggestions = suggestions.filter(function(s) { return !state.presetSteps.has(s.id); });
 
     if (visibleSuggestions.length === 0) {
       $('#presetGroup').hide();
       return;
     }
+
+    const container = $('#presetSuggestions');
+    container.empty();
 
     visibleSuggestions.forEach(function(suggestion) {
       const btn = $('<button class="preset-btn" type="button"></button>');
@@ -228,7 +224,7 @@
       btn.html('<span class="preset-btn-label">' + escapeHtml(suggestion.label) + '</span>' +
                '<span class="preset-btn-desc">' + escapeHtml(suggestion.description) + '</span>');
       btn.on('click', function() {
-        applyPresetSuggestion(suggestion);
+        withReload(applyPresetSuggestion)(suggestion);
       });
       container.append(btn);
     });
@@ -241,53 +237,7 @@
    * @param {Object} suggestion - Suggestion object with id and label
    */
   function applyPresetSuggestion(suggestion) {
-    // Accumulate preset steps — each step is a separate preset filter in the chain
-    state.presetSteps.push({ id: suggestion.id, label: suggestion.label });
-
-    // Re-render to hide the just-applied preset immediately
-    renderPresetSuggestions(state.presetSuggestions);
-
-    // Reset to page 1 and reload using the full chain
-    state.currentPage = 1;
-    loadLogs();
-  }
-
-  /**
-   * Sync a filters object back into the checkbox UI.
-   * Used after programmatically applying a preset suggestion.
-   * @param {Object} filters - Filters to reflect in the UI
-   */
-  function syncFiltersToUI(filters) {
-    if (!filters) return;
-
-    const fieldMap = {
-      logLevelInclude: '.logLevelInclude-checkbox',
-      logLevelExclude: '.logLevelExclude-checkbox',
-      threadInclude: '.threadInclude-checkbox',
-      threadExclude: '.threadExclude-checkbox',
-      componentInclude: '.componentInclude-checkbox',
-      componentExclude: '.componentExclude-checkbox',
-      deviceInclude: '.deviceInclude-checkbox',
-      deviceExclude: '.deviceExclude-checkbox',
-      filenameInclude: '.filenameInclude-checkbox',
-      filenameExclude: '.filenameExclude-checkbox'
-    };
-
-    Object.keys(fieldMap).forEach(function(field) {
-      if (!filters[field]) return;
-      const selector = fieldMap[field];
-      filters[field].forEach(function(value) {
-        // null values use "__NULL__" as checkbox value
-        const checkboxValue = value === null ? '__NULL__' : value;
-        $(selector).each(function() {
-          if ($(this).val() === checkboxValue) {
-            $(this).prop('checked', true);
-          }
-        });
-      });
-      // Update "select all" state for each field
-      updateSelectAll(field);
-    });
+    state.presetSteps.set(suggestion.id, suggestion.label);
   }
 
   /**
@@ -298,7 +248,6 @@
 
     // Save checked values for all fields before re-rendering
     const allFields = [
-      'timeBucket',
       'filenameInclude', 'filenameExclude',
       'logLevelInclude', 'logLevelExclude',
       'deviceInclude', 'deviceExclude',
@@ -311,7 +260,7 @@
     });
 
     // Render checkboxes for each filter type
-    renderCheckboxes('timeBucket', options.timeBuckets || [], false); // Time: single column
+    renderCheckboxes('timeBucket', options.timeBuckets || [], false); // Time: single column (auto-fill only)
     renderCheckboxes('filenameInclude', options.filenames || [], true);
     renderCheckboxes('filenameExclude', options.filenames || [], true);
     renderCheckboxes('logLevelInclude', options.logLevels || [], true);
@@ -334,7 +283,7 @@
           }
         });
       });
-      window.updateSelectAll(field);
+      updateSelectAll(field);
     });
 
     // Show/hide advanced filters based on total logs
@@ -343,53 +292,6 @@
     $('#threadFilterGroup').toggle(showAdvanced);
   }
 
-  /**
-   * Render checkboxes for a filter type
-   */
-  function renderCheckboxes(fieldName, items, isColumn) {
-    const container = $('#' + fieldName + 'Checkboxes');
-    container.empty();
-
-    if (!items || items.length === 0) {
-      if (!isColumn) {
-        container.append('<div class="checkbox-item"><label>No options available</label></div>');
-      }
-      return;
-    }
-
-    items.forEach(function(item) {
-      // Extract value and count from item
-      // Use 'in' operator to detect null values (|| would skip null)
-      let value, count;
-      if (typeof item === 'object' && item !== null) {
-        value = 'filename' in item ? item.filename :
-                'log_level' in item ? item.log_level :
-                'thread_name' in item ? item.thread_name :
-                'device_id' in item ? item.device_id :
-                'component_name' in item ? item.component_name :
-                'time_label' in item ? item.time_label : '';
-        count = item.count || 0;
-      } else {
-        value = item;
-        count = 0;
-      }
-
-      // Use sentinel "__NULL__" as checkbox value for null entries
-      const isNull = value === null || value === undefined;
-      const checkboxValue = isNull ? '__NULL__' : String(value);
-      const displayLabel = isNull ? '<em>(empty)</em>' : escapeHtml(String(value));
-      const id = fieldName + '_' + checkboxValue.replace(/[^a-zA-Z0-9]/g, '_');
-      const countText = count ? ' <span class="count">(' + count.toLocaleString() + ')</span>' : '';
-
-      const html = `
-        <div class="checkbox-item">
-          <input type="checkbox" id="${id}" value="${escapeHtml(checkboxValue)}" class="${fieldName}-checkbox" onchange="updateSelectAll('${fieldName}')">
-          <label for="${id}">${displayLabel}${countText}</label>
-        </div>
-      `;
-      container.append(html);
-    });
-  }
 
   /**
    * Get selected values from checkboxes
@@ -411,7 +313,8 @@
     state.currentPage = 1;
     
     // Build filters object
-    const timeBucketValues = getSelectedValues('timeBucket');
+    const timeFromValue = $('#timeFromFilter').val().trim();
+    const timeToValue = $('#timeToFilter').val().trim();
     const filenameIncludeValues = getSelectedValues('filenameInclude');
     const filenameExcludeValues = getSelectedValues('filenameExclude');
     const logLevelIncludeValues = getSelectedValues('logLevelInclude');
@@ -429,10 +332,15 @@
       strictContext: $('#strictContextFilter').is(':checked')
     };
 
-    // Add filters only if they have values
-    if (timeBucketValues.length > 0) {
-      state.filters.timeBucket = timeBucketValues;
+    // Add time range if provided
+    if (timeFromValue) {
+      state.filters.timeFrom = timeFromValue;
     }
+    if (timeToValue) {
+      state.filters.timeTo = timeToValue;
+    }
+
+    // Add filters only if they have values
     if (filenameIncludeValues.length > 0) {
       state.filters.filenameInclude = filenameIncludeValues;
     }
@@ -468,13 +376,14 @@
   }
 
   /**
-   * Clear filters UI
+   * Clear filter input fields (checkboxes are re-rendered by renderFilterOptions).
    */
   function clearFiltersUI() {
     $('#searchFilter').val('');
     $('#contextLinesFilter').val('0');
     $('#strictContextFilter').prop('checked', true);
-    $('.checkbox-item input[type="checkbox"]').prop('checked', false);
+    $('#timeFromFilter').val('');
+    $('#timeToFilter').val('');
   }
 
   /**
@@ -483,86 +392,19 @@
   function clearFilters() {
     state.filters = {};
     state.currentPage = 1;
-    state.presetSteps = [];
+    state.presetSteps = new Map();
     state.activeFilterStep = 0;
     state.inputTable = null;
-    state.presetSuggestionsLoaded = false;
-    state.presetSuggestions = [];
 
     // Clear UI
     clearFiltersUI();
 
-    $('#presetGroup').hide();
-    $('#activeFiltersGroup').hide();
-
     loadLogs();
   }
 
-  /**
-   * Render active filter tags above the filter panel
-   */
-  function renderActiveFilters() {
-    const container = $('#activeFilterTags');
-    container.empty();
-
-    let hasActive = false;
-
-    // Preset steps
-    state.presetSteps.forEach(function(step, index) {
-      hasActive = true;
-      const tag = $('<span class="active-filter-tag preset-tag"></span>');
-      tag.append($('<span></span>').text('⚡ ' + step.label));
-      const btn = $('<button class="remove-tag-btn" title="Remove">×</button>');
-      btn.on('click', function() { removePresetStep(index); });
-      tag.append(btn);
-      container.append(tag);
-    });
-
-    // Array-type filters
-    const fieldLabels = {
-      timeBucket:       '⏰',
-      filenameInclude:  '📄✅',
-      filenameExclude:  '📄❌',
-      logLevelInclude:  '📊✅',
-      logLevelExclude:  '📊❌',
-      deviceInclude:    '📱✅',
-      deviceExclude:    '📱❌',
-      componentInclude: '🔧✅',
-      componentExclude: '🔧❌',
-      threadInclude:    '🧵✅',
-      threadExclude:    '🧵❌'
-    };
-
-    Object.keys(fieldLabels).forEach(function(field) {
-      if (!state.filters[field] || state.filters[field].length === 0) return;
-      state.filters[field].forEach(function(value) {
-        hasActive = true;
-        const displayVal = value === null ? '(empty)' : String(value);
-        const tag = $('<span class="active-filter-tag"></span>');
-        tag.append($('<span></span>').text(fieldLabels[field] + ' ' + displayVal));
-        const btn = $('<button class="remove-tag-btn" title="Remove">×</button>');
-        btn.on('click', function() { removeArrayFilter(field, value); });
-        tag.append(btn);
-        container.append(tag);
-      });
-    });
-
-    // Search filter
-    if (state.filters.search) {
-      hasActive = true;
-      const tag = $('<span class="active-filter-tag"></span>');
-      tag.append($('<span></span>').text('🔎 ' + state.filters.search));
-      const btn = $('<button class="remove-tag-btn" title="Remove">×</button>');
-      btn.on('click', removeSearchFilter);
-      tag.append(btn);
-      container.append(tag);
-    }
-
-    $('#activeFiltersGroup').toggle(hasActive);
-  }
 
   /**
-   * Remove one value from an array filter, uncheck its checkbox, and reload
+   * Remove one value from an array filter and uncheck its checkbox.
    * @param {string} field - Filter field name
    * @param {*} value - Value to remove (null allowed)
    */
@@ -580,34 +422,34 @@
         $(this).prop('checked', false);
       }
     });
-    window.updateSelectAll(field);
-
-    state.currentPage = 1;
-    loadLogs();
+    updateSelectAll(field);
   }
 
   /**
-   * Remove search filter and reload
+   * Remove search filter.
    */
   function removeSearchFilter() {
     delete state.filters.search;
     $('#searchFilter').val('');
-    state.currentPage = 1;
-    loadLogs();
   }
 
   /**
-   * Remove a preset step by index and reload
-   * @param {number} index - Index in state.presetSteps
+   * Remove timeFrom or timeTo filter.
+   * @param {string} field - 'timeFrom' or 'timeTo'
    */
-  function removePresetStep(index) {
-    state.presetSteps.splice(index, 1);
-    // Re-show removed preset suggestion if still in cached list
-    renderPresetSuggestions(state.presetSuggestions);
-    state.currentPage = 1;
-    loadLogs();
+  function removeTimeRangeFilter(field) {
+    delete state.filters[field];
+    if (field === 'timeFrom') $('#timeFromFilter').val('');
+    if (field === 'timeTo') $('#timeToFilter').val('');
   }
 
+  /**
+   * Remove a preset step by id.
+   * @param {string} id - Preset id to remove
+   */
+  function removePresetStep(id) {
+    state.presetSteps.delete(id);
+  }
 
   function loadLogs() {
     const requestFilters = buildRequestFilters();
@@ -628,10 +470,10 @@
           state.totalPages = response.totalPages;
           state.inputTable = response.outputTable || null;
           state.activeFilterStep = 1;
+          state.filterOptions = response.filterOptions || {};
           renderLogs(response.logs);
           updatePagination();
-          loadFilterOptions();
-          renderActiveFilters();
+          renderAll();
         } else {
           showStatus('❌ Failed to load logs: ' + response.error, 'error');
         }
@@ -649,7 +491,7 @@
    */
   function buildRequestFilters() {
     const requestFilters = Object.assign({}, state.filters);
-    const presetIds = state.presetSteps.map(function(step) { return step.id; }).filter(Boolean);
+    const presetIds = Array.from(state.presetSteps.keys()).filter(Boolean);
 
     if (presetIds.length > 0) {
       requestFilters.preset = presetIds;
@@ -660,50 +502,6 @@
     return requestFilters;
   }
 
-  /**
-   * Escape HTML special characters
-   */
-  function escapeHtml(text) {
-    if (text === null || text === undefined) return '';
-    return String(text)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;');
-  }
-
-  /**
-   * Highlight search term in text
-   * Tries to use searchTerm as a regex pattern first; falls back to literal text match
-   */
-  function highlightSearchTerm(text, searchTerm) {
-    if (!searchTerm || !text) return escapeHtml(text);
-
-    const escapedText = escapeHtml(text);
-    const escapedSearchTerm = escapeHtml(searchTerm);
-
-    let regex;
-    try {
-      // Try as regex pattern (e.g. "session|timeout")
-      regex = new RegExp('(' + escapedSearchTerm + ')', 'gi');
-      // Validate by testing (throws if invalid)
-      regex.test('');
-    } catch (e) {
-      // Fallback to literal text match
-      regex = new RegExp('(' + escapedSearchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
-    }
-
-    return escapedText.replace(regex, '<mark class="search-highlight">$1</mark>');
-  }
-
-  /**
-   * Toggle log entry truncation based on showAllCheckbox state
-   */
-  function toggleLogTruncation() {
-    const showAll = $('#showAllCheckbox').is(':checked');
-    $('#log-container').toggleClass('log-truncated', !showAll);
-  }
 
   /**
    * Render logs
@@ -798,42 +596,23 @@
     }
   }
 
+
+
   /**
-   * Show status message
+   * Add 1 hour to a date string in "YYYY.MM.DD HH:mm" format.
+   * @param {string} dateStr
+   * @returns {string}
    */
-  function showStatus(message, type) {
-    const statusBar = $('#statusBar');
-    statusBar.removeClass('success error warning info');
-    statusBar.addClass(type);
-    statusBar.text(message);
-    statusBar.show();
-
-    // Auto-hide after 5 seconds for success messages
-    if (type === 'success') {
-      setTimeout(function() {
-        statusBar.fadeOut();
-      }, 5000);
-    }
+  function addOneHour(dateStr) {
+    const match = dateStr.match(/^(\d{4})\.(\d{2})\.(\d{2}) (\d{2}):(\d{2})$/);
+    if (!match) return dateStr;
+    const d = new Date(
+      parseInt(match[1]), parseInt(match[2]) - 1, parseInt(match[3]),
+      parseInt(match[4]), parseInt(match[5])
+    );
+    d.setHours(d.getHours() + 1);
+    const pad = function(n) { return String(n).padStart(2, '0'); };
+    return d.getFullYear() + '.' + pad(d.getMonth() + 1) + '.' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
   }
-
-  // Global functions for inline event handlers
-  window.toggleFilter = function(header) {
-    const content = $(header).next('.filter-content');
-    const toggle = $(header).find('.toggle');
-    content.toggleClass('collapsed');
-    toggle.toggleClass('collapsed');
-  };
-
-  window.toggleAll = function(selectAllCheckbox, fieldName) {
-    const checkboxes = $('.' + fieldName + '-checkbox');
-    checkboxes.prop('checked', selectAllCheckbox.checked);
-  };
-
-  window.updateSelectAll = function(fieldName) {
-    const checkboxes = $('.' + fieldName + '-checkbox');
-    const selectAllCheckbox = $('#selectAll_' + fieldName);
-    const allChecked = checkboxes.length > 0 && checkboxes.length === checkboxes.filter(':checked').length;
-    selectAllCheckbox.prop('checked', allChecked);
-  };
 
 })();

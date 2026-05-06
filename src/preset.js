@@ -34,6 +34,24 @@ class PresetService {
   }
 
   /**
+   * Load and parse a preset JSON file from disk.
+   * Returns null if the file is absent, undefined, or cannot be parsed.
+   * @param {string} filePath - Full path to the JSON file
+   * @param {Function} logger - Logger function
+   * @returns {Object|null} Parsed JSON object, or null on failure
+   */
+  static loadPresetFile(filePath, logger = console.log) {
+    if (!fs.existsSync(filePath)) return null;
+    try {
+      const raw = fs.readFileSync(filePath, 'utf-8');
+      return JSON.parse(raw) || null;
+    } catch (e) {
+      logger(`⚠️  Failed to load preset file "${filePath}": ${e.message}`);
+      return null;
+    }
+  }
+
+  /**
    * Load user-defined presets from the preset.json file at the project root.
    * Returns an empty object if the file is absent or cannot be parsed.
    * @param {string|null} jsonPath - Override path (defaults to getUserPresetsPath())
@@ -42,25 +60,19 @@ class PresetService {
    */
   static loadUserPresets(jsonPath = null, logger = console.log) {
     const filePath = jsonPath || PresetService.getUserPresetsPath();
-    if (!fs.existsSync(filePath)) return {};
-    try {
-      const raw = fs.readFileSync(filePath, 'utf-8');
-      const parsed = JSON.parse(raw) || {};
-      // Validate each entry: warn and skip any that lack a valid `filters` object,
-      // because applyPreset() calls Object.entries(preset.filters) and would crash.
-      const valid = {};
-      for (const [id, entry] of Object.entries(parsed)) {
+    const parsed = PresetService.loadPresetFile(filePath, logger);
+    if (!parsed) return {};
+    // Validate each entry: warn and skip any that lack a valid `filters` object,
+    // because applyPreset() calls Object.entries(preset.filters) and would crash.
+    const valid = {};
+    for (const [id, entry] of Object.entries(parsed)) {
       if (!entry || !entry.filters || typeof entry.filters !== 'object') {
-          logger(`⚠️  Skipping malformed preset "${id}" in ${filePath}: missing or invalid "filters" property`);
-          continue;
-        }
-        valid[id] = entry;
+        logger(`⚠️  Skipping malformed preset "${id}" in ${filePath}: missing or invalid "filters" property`);
+        continue;
       }
-      return valid;
-    } catch (e) {
-      logger(`⚠️  Failed to load user presets: ${e.message}`);
-      return {};
+      valid[id] = entry;
     }
+    return valid;
   }
 
   /**
@@ -88,26 +100,20 @@ class PresetService {
     const userPresets = PresetService.loadUserPresets(null, logger);
 
     const presetsPath = PresetService.getPresetsPath(dbDir);
-    if (!fs.existsSync(presetsPath)) return userPresets;
-    try {
-      const raw = fs.readFileSync(presetsPath, 'utf-8');
-      const snapshotPresets = JSON.parse(raw) || {};
+    const snapshotPresets = PresetService.loadPresetFile(presetsPath, logger);
+    if (!snapshotPresets) return userPresets;
 
-      // Warn when a snapshot entry shadows a user-defined preset with the same id.
-      // This typically means the preset was part of the codebase at scan time and
-      // was written into neuf-presets.json.  Edits to preset.json won't take effect
-      // for those ids until the database is rebuilt (delete neuf-logs.db and re-scan).
-      const shadowed = Object.keys(userPresets).filter(id => id in snapshotPresets);
-      if (shadowed.length > 0) {
-        logger(`⚠️  The following preset(s) in preset.json are shadowed by the scan-time snapshot and won't reflect your edits until you rebuild the database: ${shadowed.join(', ')}`);
-      }
-
-      // Snapshot (data-derived) presets override user presets on key collision
-      return { ...userPresets, ...snapshotPresets };
-    } catch (e) {
-      logger(`⚠️  Failed to load preset snapshot: ${e.message}`);
-      return userPresets;
+    // Warn when a snapshot entry shadows a user-defined preset with the same id.
+    // This typically means the preset was part of the codebase at scan time and
+    // was written into neuf-presets.json.  Edits to preset.json won't take effect
+    // for those ids until the database is rebuilt (delete neuf-logs.db and re-scan).
+    const shadowed = Object.keys(userPresets).filter(id => id in snapshotPresets);
+    if (shadowed.length > 0) {
+      shadowed.forEach(id => logger(`⚠️  User preset "${id}" is overridden by scan preset`));
     }
+
+    // Snapshot (data-derived) presets override user presets on key collision
+    return { ...userPresets, ...snapshotPresets };
   }
 
   // ...existing code...
