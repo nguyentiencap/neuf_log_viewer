@@ -26,6 +26,44 @@ class PresetService {
   }
 
   /**
+   * Get path to user-defined preset JSON file (preset.json at project root).
+   * @returns {string}
+   */
+  static getUserPresetsPath() {
+    return path.join(__dirname, '..', 'preset.json');
+  }
+
+  /**
+   * Load user-defined presets from the preset.json file at the project root.
+   * Returns an empty object if the file is absent or cannot be parsed.
+   * @param {string|null} jsonPath - Override path (defaults to getUserPresetsPath())
+   * @param {Function} logger - Logger function
+   * @returns {Object} Map of preset id to preset object
+   */
+  static loadUserPresets(jsonPath = null, logger = console.log) {
+    const filePath = jsonPath || PresetService.getUserPresetsPath();
+    if (!fs.existsSync(filePath)) return {};
+    try {
+      const raw = fs.readFileSync(filePath, 'utf-8');
+      const parsed = JSON.parse(raw) || {};
+      // Validate each entry: warn and skip any that lack a valid `filters` object,
+      // because applyPreset() calls Object.entries(preset.filters) and would crash.
+      const valid = {};
+      for (const [id, entry] of Object.entries(parsed)) {
+      if (!entry || !entry.filters || typeof entry.filters !== 'object') {
+          logger(`⚠️  Skipping malformed preset "${id}" in ${filePath}: missing or invalid "filters" property`);
+          continue;
+        }
+        valid[id] = entry;
+      }
+      return valid;
+    } catch (e) {
+      logger(`⚠️  Failed to load user presets: ${e.message}`);
+      return {};
+    }
+  }
+
+  /**
    * Save filter options snapshot to JSON file.
    * Called once after scan so presets always reflect original data.
    * @param {string} presetsPath - Full path to the JSON file
@@ -38,21 +76,37 @@ class PresetService {
   }
 
   /**
-   * Load filter options snapshot from JSON file.
+   * Load filter options snapshot from JSON file and merge with user-defined presets
+   * from preset.json at the project root.
+   * User presets are loaded first; snapshot presets (data-derived) take precedence
+   * on ID collision so dynamic suggestions always win.
    * @param {string} dbDir - path to the DB directory (used to construct full path to presets file)
    * @param {Function} logger - Logger function
-   * @returns {Object|null} filterOptions snapshot, or null if file not found
+   * @returns {Object} Merged preset map (never null — at minimum returns user presets or {})
    */
   static loadPreset(dbDir, logger = console.log) {
+    const userPresets = PresetService.loadUserPresets(null, logger);
+
     const presetsPath = PresetService.getPresetsPath(dbDir);
-    if (!fs.existsSync(presetsPath)) return null;
+    if (!fs.existsSync(presetsPath)) return userPresets;
     try {
       const raw = fs.readFileSync(presetsPath, 'utf-8');
-      const parsed = JSON.parse(raw);
-      return parsed || null;
+      const snapshotPresets = JSON.parse(raw) || {};
+
+      // Warn when a snapshot entry shadows a user-defined preset with the same id.
+      // This typically means the preset was part of the codebase at scan time and
+      // was written into neuf-presets.json.  Edits to preset.json won't take effect
+      // for those ids until the database is rebuilt (delete neuf-logs.db and re-scan).
+      const shadowed = Object.keys(userPresets).filter(id => id in snapshotPresets);
+      if (shadowed.length > 0) {
+        logger(`⚠️  The following preset(s) in preset.json are shadowed by the scan-time snapshot and won't reflect your edits until you rebuild the database: ${shadowed.join(', ')}`);
+      }
+
+      // Snapshot (data-derived) presets override user presets on key collision
+      return { ...userPresets, ...snapshotPresets };
     } catch (e) {
       logger(`⚠️  Failed to load preset snapshot: ${e.message}`);
-      return null;
+      return userPresets;
     }
   }
 
@@ -139,46 +193,6 @@ class PresetService {
          };
        }
      }
-
-     // ── LIKE pattern presets — always available ───────────────────────────────
-     suggestions["exclude_endpoint_tester"] = {
-       id: 'exclude_endpoint_tester',
-       label: '🔌 Exclude Endpoint Tester components',
-       description: 'Exclude all components matching %Endpoint%',
-       filters: { componentExclude: ['%Endpoint%'] }
-     };
-     suggestions["exclude_historical_data"] = {
-       id: 'exclude_historical_data',
-       label: '📜 Exclude Historical data components',
-       description: 'Exclude all components matching %Historical%',
-       filters: { componentExclude: ['%Historical%'] }
-     };
-     suggestions["exclude_dws"] = {
-       id: 'exclude_dws',
-       label: '📜 Exclude DWS components',
-       description: 'Exclude all components matching Dws%',
-       filters: { componentExclude: ['Dws%'] }
-     };
-     suggestions["exclude_wiring"] = {
-       id: 'exclude_wiring',
-       label: '📜 Exclude Wiring components',
-       description: 'Exclude all components matching %Wiring%',
-       filters: { componentExclude: ['%Wiring%'] }
-     };
-
-     // ── Component null suggestions ────────────────────────────────────────────
-     suggestions["component_not_null"] = {
-       id: 'component_not_null',
-       label: '🔍 Show only logs with component',
-       description: 'Show only logs that have a component name',
-       filters: { componentExclude: [null] }
-     };
-     suggestions["component_null"] = {
-       id: 'component_null',
-       label: '🔍 Show only logs without component',
-       description: 'Show only logs that have no component name (empty)',
-       filters: { componentInclude: [null] }
-     };
 
      // ── Log level suggestions ─────────────────────────────────────────────────
      const hasErrors = logLevels.some(l => l.log_level === 'ERROR');

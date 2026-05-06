@@ -1,0 +1,38 @@
+{
+  "exclude_endpoint_tester": {
+    "id": "exclude_endpoint_tester",
+    "label": "🔌 Exclude Endpoint Tester components",
+    "description": "Exclude all components matching %Endpoint%",
+    "filters": { "componentExclude": ["%Endpoint%"] }
+  },
+  "exclude_historical_data": {
+    "id": "exclude_historical_data",
+    "label": "📜 Exclude Historical data components",
+    "description": "Exclude all components matching %Historical%",
+    "filters": { "componentExclude": ["%Historical%"] }
+  },
+  "exclude_dws": {
+    "id": "exclude_dws",
+    "label": "📜 Exclude DWS components",
+    "description": "Exclude all components matching Dws%",
+    "filters": { "componentExclude": ["Dws%"] }
+  },
+  "exclude_wiring": {
+    "id": "exclude_wiring",
+    "label": "📜 Exclude Wiring components",
+    "description": "Exclude all components matching %Wiring%",
+    "filters": { "componentExclude": ["%Wiring%"] }
+  },
+  "component_not_null": {
+    "id": "component_not_null",
+    "label": "🔍 Show only logs with component",
+    "description": "Show only logs that have a component name",
+    "filters": { "componentExclude": [null] }
+  },
+  "component_null": {
+    "id": "component_null",
+    "label": "🔍 Show only logs without component",
+    "description": "Show only logs that have no component name (empty)",
+    "filters": { "componentInclude": [null] }
+  }
+}

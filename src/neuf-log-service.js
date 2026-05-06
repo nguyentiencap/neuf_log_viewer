@@ -451,9 +451,10 @@ class NEUFLogService {
   async applyPreset(folderPath, filters) {
     if (!filters || !filters.preset) return;
 
-    // Always resolve presets from snapshot (generated at scan time from base logs table)
+    // Always resolve presets from snapshot (generated at scan time from base logs table).
+    // loadPreset merges user presets (preset.json) with the scan-time snapshot.
     const { dbDir } = this.getDbPath(folderPath);
-    let presets = PresetService.loadPreset(dbDir, this.logger);
+    const presets = PresetService.loadPreset(dbDir, this.logger);
     PresetService.applyPreset(filters, presets, this.logger);
   }
 
@@ -471,7 +472,8 @@ class NEUFLogService {
     this.logger(`💡 Getting preset suggestions`);
 
     const { dbDir } = this.getDbPath(folderPath);
-    const presets = PresetService.loadPreset(dbDir, this.logger) || {};
+    // loadPreset merges user presets (preset.json) with the scan-time snapshot.
+    const presets = PresetService.loadPreset(dbDir, this.logger);
 
     // Strip internal filters field — only expose id, label, description to callers
     const clientSuggestions = Object.values(presets).map(({ id, label, description }) => ({ id, label, description }));
