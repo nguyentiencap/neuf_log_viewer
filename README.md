@@ -91,8 +91,8 @@ Each entry in the file follows this structure:
 |---|---|---|
 | `logLevelInclude` | `string[]` | Include only these log levels (e.g. `["ERROR", "WARN"]`) |
 | `logLevelExclude` | `string[]` | Exclude these log levels |
-| `componentInclude` | `string[]` | Include only these components (supports SQL `%LIKE%` wildcards) |
-| `componentExclude` | `string[]` | Exclude these components (supports SQL `%LIKE%` wildcards; use `null` to exclude entries with no component) |
+| `componentInclude` | `(string\|null)[]` | Include only these components (supports SQL `%LIKE%` wildcards; use `null` to include only logs that have no component) |
+| `componentExclude` | `(string\|null)[]` | Exclude these components (supports SQL `%LIKE%` wildcards; use `null` to exclude logs that have no component) |
 | `threadInclude` | `string[]` | Include only these threads |
 | `threadExclude` | `string[]` | Exclude these threads |
 | `deviceInclude` | `string[]` | Include only these device IDs |
@@ -103,6 +103,7 @@ Each entry in the file follows this structure:
 **Notes:**
 - Changes to `preset.json` take effect immediately on the next API request — no restart required.
 - Data-derived presets (generated automatically from your log data at scan time) take precedence over entries in `preset.json` if they share the same `id`.
+- Use `null` as a value inside `componentInclude` or `componentExclude` to match logs that have **no component** (SQL `IS NULL`). Example: `"componentInclude": [null]` shows only component-less logs.
 
 #### 3. Pagination
 - Adjust the number of logs per page (default: 50)
