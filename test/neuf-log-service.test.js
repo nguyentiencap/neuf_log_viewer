@@ -8,6 +8,17 @@ const { NEUFLogService } = require('../src/neuf-log-service');
 const TEST_DIR = path.join(__dirname, 'test-logs');
 const mockLogger = () => {};
 const logService = new NEUFLogService(mockLogger);
+
+// Clean up all generated test folders inside test-logs after all tests complete
+afterAll(() => {
+  if (!fs.existsSync(TEST_DIR)) return;
+  for (const entry of fs.readdirSync(TEST_DIR)) {
+    const entryPath = path.join(TEST_DIR, entry);
+    try {
+      fs.rmSync(entryPath, { recursive: true, force: true });
+    } catch (_) { /* ignore cleanup errors */ }
+  }
+});
 // ============================================================================
 // getDbPath
 // ============================================================================
