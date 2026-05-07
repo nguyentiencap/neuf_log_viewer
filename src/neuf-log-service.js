@@ -282,7 +282,9 @@ class NEUFLogService {
     // Generate and save preset snapshot before export (UDFs still registered on scan-time connection)
     const presetsPath = PresetService.getPresetsPath(dbDir);
     const filterOptions = databaseService.getFilterOptions('logs', false);
-    const presets = PresetService.getPresetSuggestions(filterOptions, {});
+    const basePresets = PresetService.getPresetSuggestions(filterOptions, {});
+    const installPresets = this._generateInstallPresets(databaseService);
+    const presets = { ...basePresets, ...installPresets };
     this.logger(presets);
     PresetService.savePreset(presetsPath, presets, this.logger);
 
@@ -485,6 +487,57 @@ class NEUFLogService {
       success: true,
       data: filterOptions
     };
+  }
+
+  // -------- Install presets --------
+
+  /**
+   * Query install events from in-memory database service and generate install presets.
+   * Filters logs where component_name LIKE '%LifecycleProvider' AND message LIKE 'Fujifilm dws:install%'.
+   * @param {Object} databaseService - Database service instance
+   * @returns {Object} Map of install preset id to preset object
+   */
+  _generateInstallPresets(databaseService) {
+    const installLogs = databaseService.db.prepare(
+      `SELECT device_id, timestamp FROM logs
+       WHERE component_name LIKE '%LifecycleProvider'
+         AND message LIKE 'Fujifilm dws:install%'
+       ORDER BY device_id, timestamp ASC`
+    ).all();
+
+    if (installLogs.length === 0) {
+      this.logger('ℹ️  No LifecycleProvider install events found, skipping install presets.');
+      return {};
+    }
+
+    this.logger(`🔍 Found ${installLogs.length} LifecycleProvider install events.`);
+    return PresetService.createInstallPresets(installLogs);
+  }
+
+  /**
+   * Create install-based presets from LifecycleProvider install events.
+   * Can be called standalone after scan to regenerate install presets.
+   * Queries logs, groups by device_id, creates time-range presets between consecutive installs,
+   * then merges with existing preset snapshot and saves to disk.
+   * @param {string} folderPath - Path to log folder
+   * @returns {Promise<Object>} { success, count }
+   */
+  async createInstallPreset(folderPath) {
+    const { dbDir } = this.getDbPath(folderPath);
+    const { databaseService } = await this.loadDatabase(folderPath);
+
+    this.logger('📦 Creating install presets from LifecycleProvider events...');
+
+    const installPresets = this._generateInstallPresets(databaseService);
+
+    const presetsPath = PresetService.getPresetsPath(dbDir);
+    const existingPresets = PresetService.loadPresetFile(presetsPath, this.logger) || {};
+    const mergedPresets = { ...existingPresets, ...installPresets };
+    PresetService.savePreset(presetsPath, mergedPresets, this.logger);
+
+    const count = Object.keys(installPresets).length;
+    this.logger(`💡 Created ${count} install presets.`);
+    return { success: true, count };
   }
 
   // -------- Output formatting --------

@@ -154,6 +154,94 @@ class PresetService {
   }
 
   /**
+   * Parse a log timestamp string to floor/ceil Unix seconds.
+   * @param {string} ts - "YYYY.MM.DD HH:mm:ss.SSS"
+   * @returns {{ floorSec: number, ceilSec: number }|null}
+   */
+  static _parseTimestampSec(ts) {
+    const m = ts.match(/^(\d{4})\.(\d{2})\.(\d{2}) (\d{2}):(\d{2}):(\d{2})\.(\d{3})/);
+    if (!m) return null;
+    const unixMs = Date.UTC(
+      parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10),
+      parseInt(m[4], 10), parseInt(m[5], 10), parseInt(m[6], 10), parseInt(m[7], 10)
+    );
+    return {
+      floorSec: Math.floor(unixMs / 1000),
+      ceilSec: Math.ceil(unixMs / 1000)
+    };
+  }
+
+  /**
+   * Format Unix timestamp (seconds, UTC) to "YYYY.MM.DD HH:mm:ss" string.
+   * @param {number} unixSec
+   * @returns {string}
+   */
+  static _formatUnixSec(unixSec) {
+    const d = new Date(unixSec * 1000);
+    const pad = n => String(n).padStart(2, '0');
+    return `${d.getUTCFullYear()}.${pad(d.getUTCMonth() + 1)}.${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
+  }
+
+  /**
+   * Create install-based presets from LifecycleProvider install log entries.
+   * Groups by device_id, sorts timestamps, and creates a preset for each interval
+   * between consecutive installs plus one for the last (open-ended) install.
+   * timeFrom/timeTo stored as Unix seconds (numbers) so normalizeFilters passes them through unchanged.
+   * @param {Array<{device_id: string, timestamp: string}>} installLogs - Install log rows from DB
+   * @returns {Object} Map of preset id to preset object
+   */
+  static createInstallPresets(installLogs) {
+    const presets = {};
+
+    // Group timestamps by device_id
+    const byDevice = {};
+    for (const log of installLogs) {
+      if (!log.device_id) continue;
+      if (!byDevice[log.device_id]) byDevice[log.device_id] = [];
+      byDevice[log.device_id].push(log.timestamp);
+    }
+
+    for (const [deviceId, timestamps] of Object.entries(byDevice)) {
+      // Ensure ascending order
+      timestamps.sort();
+
+      for (let i = 0; i < timestamps.length; i++) {
+        const parsedFrom = PresetService._parseTimestampSec(timestamps[i]);
+        if (!parsedFrom) continue;
+
+        const timeFromSec = parsedFrom.floorSec;
+        const timeFromStr = PresetService._formatUnixSec(timeFromSec);
+        const presetId = `fujifilm_install_${deviceId}_${i + 1}`;
+
+        let label, filters;
+
+        if (i < timestamps.length - 1) {
+          // Interval between this install and the next
+          const parsedTo = PresetService._parseTimestampSec(timestamps[i + 1]);
+          if (!parsedTo) continue;
+          const timeToSec = parsedTo.ceilSec;
+          const timeToStr = PresetService._formatUnixSec(timeToSec);
+          label = `📦 Fujifilm-${deviceId} install from ${timeFromStr} -> ${timeToStr}`;
+          filters = { timeFrom: timeFromSec, timeTo: timeToSec, deviceInclude: [deviceId, null] };
+        } else {
+          // Last install — open-ended, no timeTo
+          label = `📦 Fujifilm-${deviceId} install from ${timeFromStr}`;
+          filters = { timeFrom: timeFromSec, deviceInclude: [deviceId, null] };
+        }
+
+        presets[presetId] = {
+          id: presetId,
+          label,
+          description: label,
+          filters
+        };
+      }
+    }
+
+    return presets;
+  }
+
+  /**
    * Generate preset suggestions based on current data.
    * Suggestions are contextually aware: options already applied via currentFilters
    * are not re-suggested.

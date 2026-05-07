@@ -58,6 +58,7 @@ class LogParserService {
    *   - null/undefined -> null
    *   - number -> as-is
    *   - "YYYY-MM-DD HH:MM" (bucket label format from BUCKET_LABEL SQL output)
+   *   - "YYYY.MM.DD HH:mm:ss" (preset filter format, second precision)
    *   - "YYYY.MM.DD HH:mm:ss.SSS" (raw log timestamp format)
    * @param {string|number|null} value - Input value
    * @returns {number|null}
@@ -66,8 +67,8 @@ class LogParserService {
     if (value == null) return null;
     if (typeof value === 'number') return value;
     try {
-      // Log timestamp format: "YYYY.MM.DD HH:mm:ss.SSS"
-      const tsMatch = String(value).match(/^(\d{4})\.(\d{2})\.(\d{2}) (\d{2}):(\d{2})/);
+      // Supports optional seconds: "YYYY.MM.DD HH:mm" or "YYYY.MM.DD HH:mm:ss[.SSS]"
+      const tsMatch = String(value).match(/^(\d{4})\.(\d{2})\.(\d{2}) (\d{2}):(\d{2})(?::(\d{2}))?/);
       if (!tsMatch) return null;
 
       const year = parseInt(tsMatch[1], 10);
@@ -75,8 +76,9 @@ class LogParserService {
       const day = parseInt(tsMatch[3], 10);
       const hour = parseInt(tsMatch[4], 10);
       const minute = parseInt(tsMatch[5], 10);
+      const second = tsMatch[6] ? parseInt(tsMatch[6], 10) : 0;
 
-      const date = new Date(Date.UTC(year, month, day, hour, minute, 0, 0));
+      const date = new Date(Date.UTC(year, month, day, hour, minute, second, 0));
       return Math.floor(date.getTime() / 1000);
     } catch (error) {
       return null;
