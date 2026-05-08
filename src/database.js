@@ -88,8 +88,9 @@ class DatabaseWrapper {
  * Encapsulates all database operations with dependencies
  */
 class DatabaseService {
-  constructor(db) {
+  constructor(db, logger = console.log) {
     this.db = db;
+    this.logger = logger;
   }
   
   /**
@@ -401,7 +402,7 @@ class DatabaseService {
       // Step 1: insert all matching rows (applies all filters including search)
       const { where, params } = this.buildWhereClause(filters);
       const sql = `INSERT INTO ${outputTable} SELECT * FROM ${inputTable} ${where} ORDER BY timestamp ASC`;
-      console.log(sql);
+      this.logger(sql);
       this.db.prepare(sql).run(...params);
 
       // Step 2: if contextLines requested, insert surrounding rows not yet in outputTable
@@ -437,7 +438,7 @@ class DatabaseService {
 
     const result = this.db.prepare(`SELECT COUNT(*) as count FROM ${outputTable}`).get();
     const count = result ? result.count : 0;
-    console.log(`executeFilterStep completed: ${count} rows in ${outputTable}`);
+    this.logger(`executeFilterStep completed: ${count} rows in ${outputTable}`);
     return { count };
   }
 

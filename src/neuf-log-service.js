@@ -151,7 +151,7 @@ class NEUFLogService {
   _createDatabaseService(sqlDb) {
     const db = new DatabaseWrapper(sqlDb);
     // Pass only the getTimeBucket function (no need to bind since it doesn't use 'this')
-    const databaseService = new DatabaseService(db);
+    const databaseService = new DatabaseService(db, this.logger);
     // Always register custom SQL functions (needed for both scan and load paths)
     databaseService.registerCustomFunctions();
     return { db, databaseService };
