@@ -11,23 +11,89 @@
  */
 class LogParserService {
   /**
-   * Phase 1: Detect if a line starts a new log entry (timestamp boundary detection)
-   * Only extracts timestamp; the rest of the line is kept as rawContent for Phase 2.
-   * Handles multi-line log entries by returning null for continuation lines.
+   * Parse a log line to extract all structured log fields
+   * Combines timestamp detection and full parsing in one function
    * @param {string} line - Raw log line
-   * @returns {{timestamp: string, rawContent: string}|null} Phase 1 entry or null if not a new log entry
+   * @param {string} filename - Source filename
+   * @returns {Object|null} Complete log object or null if not a valid log entry
    */
-  parsePhase1Line(line) {
+  parseLine(line, filename) {
+    // Step 1: Extract timestamp
     const timestampRegex = /^(\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}:\d{2}\.\d{3})/;
     const match = line.match(timestampRegex);
     if (!match) return null;
 
     const timestamp = match[1];
-    const rawContent = line.substring(timestamp.length).trim();
     const timeBucket = this.getTimeBucket(timestamp);
-    return { timestamp, rawContent, timeBucket };
+    let remaining = line.substring(match[0].length).trim();
+
+    // Step 2: Extract log level
+    const levelMatch = remaining.match(/^\[(\w+)\]/);
+    if (!levelMatch) return null;
+
+    const logLevel = levelMatch[1];
+    remaining = remaining.substring(levelMatch[0].length).trim();
+
+    // Step 3: Skip optional class prefix
+    const classMatch = remaining.match(/^(?:class\s+[\w.]+):\s+/);
+    if (classMatch) {
+      remaining = remaining.substring(classMatch[0].length);
+    }
+
+    // Step 4: Extract thread name
+    const threadMatch = remaining.match(/^([^:]+):/);
+    if (!threadMatch) return null;
+
+    const threadName = threadMatch[1].trim();
+    remaining = remaining.substring(threadMatch[0].length).trim();
+
+    // Step 5: Extract optional device ID
+    let deviceId = null;
+    const deviceMatch = remaining.match(/^<([^>]+)>\s+/);
+    if (deviceMatch) {
+      deviceId = deviceMatch[1];
+      remaining = remaining.substring(deviceMatch[0].length);
+    }
+
+    // Step 6: Extract optional component name
+    let componentName = null;
+    const componentMatch = remaining.match(/^\(([^)]+)\)/);
+    if (componentMatch) {
+      componentName = this.normalizeComponentName(componentMatch[1]);
+      remaining = remaining.substring(componentMatch[0].length).trim();
+    }
+
+    // Step 7: Remaining content is message
+    const message = remaining;
+
+    return {
+      filename,
+      timestamp,
+      timeBucket,
+      logLevel,
+      threadName: this.normalizeThreadName(threadName),
+      deviceId: deviceId || null,
+      componentName: componentName || null,
+      message
+    };
   }
 
+  /**
+   * Detect if a line starts a new log entry (for Phase 1 file scanning)
+   * Returns timestamp and timeBucket if found, otherwise null
+   * Used to detect log entry boundaries while handling multi-line entries
+   * @param {string} line - Raw log line
+   * @returns {{timestamp: string, timeBucket: number}|null} Timestamp info or null
+   */
+  detectLogLineStart(line) {
+    const timestampRegex = /^(\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}:\d{2}\.\d{3})/;
+    const match = line.match(timestampRegex);
+    if (!match) return null;
+
+    const timestamp = match[1];
+    const timeBucket = this.getTimeBucket(timestamp);
+    return { timestamp, timeBucket };
+  }
 
   /**
    * Normalize component name by extracting the package/class path (everything before the last dot)
@@ -84,107 +150,64 @@ class LogParserService {
       return null;
     }
   }
-  
-  /**
-   * Phase 2: Parse a raw Phase 1 entry to extract all structured log fields.
-   * Input comes from the temp table (filename, timestamp, rawContent where rawContent may be multi-line).
-   * @param {{filename: string, timestamp: string, timeBucket: number, rawContent: string}} rawEntry - Phase 1 entry
-   * @returns {Object|null} Complete log object or null if parsing fails
-   */
-  parsePhase2Entry(rawEntry) {
-    const { filename, timestamp, timeBucket, rawContent } = rawEntry;
 
-    // Split rawContent: first line contains structured fields; rest are continuation lines
-    const newlineIndex = rawContent.indexOf('\n');
-    const firstLine = newlineIndex >= 0 ? rawContent.substring(0, newlineIndex) : rawContent;
-    const continuationLines = newlineIndex >= 0 ? rawContent.substring(newlineIndex + 1) : '';
+   /**
+    * Format log entry for display/export
+    * Returns object with original log data + formattedLog string
+    * @param {Object} log - Log entry object from database
+    * @param {string} format - 'full' | 'compact' | 'json'
+    * @returns {Object} Log object with added formattedLog field
+    */
+   formatLogEntry(log, format = 'full') {
+     const timestamp = log.timestamp;
+     let formattedLog = '';
 
-    let remaining = firstLine;
+     // Compact format: hide thread/device details, truncate message
+     if (format === 'compact') {
+       formattedLog = `(${log.filename}) ${timestamp} [${log.log_level}]`;
 
-    const levelMatch = remaining.match(/^\[(\w+)\]/);
-    if (!levelMatch) return null;
+       if (log.component_name) {
+         formattedLog += ` (${log.component_name})`;
+       }
 
-    const logLevel = levelMatch[1];
-    remaining = remaining.substring(levelMatch[0].length).trim();
+       // Truncate message to 750 chars for non-error levels
+       const isError = log.log_level && log.log_level.toUpperCase() === 'ERROR';
+       const message = (!isError && log.message && log.message.length > 750)
+         ? log.message.substring(0, 750) + '...'
+         : log.message;
 
-    const classMatch = remaining.match(/^(?:class\s+[\w.]+):\s+/);
-    if (classMatch) {
-      remaining = remaining.substring(classMatch[0].length);
-    }
+       formattedLog += ` ${message}`;
+       formattedLog = formattedLog.trim();
+     } else {
+       // Full format (default): build complete log line with all details
+       formattedLog = `(${log.filename}) ${timestamp} [${log.log_level}] ${log.thread_name}:`;
 
-    const threadMatch = remaining.match(/^([^:]+):/);
-    if (!threadMatch) return null;
+       if (log.device_id) {
+         formattedLog += ` <${log.device_id}>`;
+       }
 
-    const threadName = threadMatch[1].trim();
-    remaining = remaining.substring(threadMatch[0].length).trim();
+       if (log.component_name) {
+         formattedLog += ` (${log.component_name})`;
+       }
 
-    let deviceId = null;
-    const deviceMatch = remaining.match(/^<([^>]+)>\s+/);
-    if (deviceMatch) {
-      deviceId = deviceMatch[1];
-      remaining = remaining.substring(deviceMatch[0].length);
-    }
+       formattedLog += ` ${log.message}`;
+       formattedLog = formattedLog.trim();
+     }
 
-    let componentName = null;
-    const componentMatch = remaining.match(/^\(([^)]+)\)/);
-    if (componentMatch) {
-      componentName = this.normalizeComponentName(componentMatch[1]);
-      remaining = remaining.substring(componentMatch[0].length).trim();
-    }
-
-    // Message is the remaining structured part plus any continuation lines
-    let message = remaining;
-    if (continuationLines) {
-      message += '\n' + continuationLines;
-    }
-
-    return {
-      filename,
-      timestamp,
-      timeBucket,
-      logLevel,
-      threadName: this.normalizeThreadName(threadName),
-      deviceId: deviceId || null,
-      componentName: componentName || null,
-      message
-    };
-  }
-
-  /**
-   * Format log entry for display/export
-   * Used for exporting filtered logs
-   */
-  formatLogEntry(log, format) {
-    // Timestamp đã ở format gốc YYYY.MM.DD HH:mm:ss.SSS - không cần convert
-    const timestamp = log.timestamp;
-
-    // Compact export hides thread/device details.
-    if (format === 'compact') {
-      let compactLogLine = `(${log.filename}) ${timestamp} [${log.log_level}]`;
-
-      if (log.component_name) {
-        compactLogLine += ` (${log.component_name})`;
-      }
-
-      compactLogLine += ` ${log.message}`;
-      return compactLogLine.trim();
-    }
-
-    // Build log line in original format with filename prefix
-    let logLine = `(${log.filename}) ${timestamp} [${log.log_level}] ${log.thread_name}:`;
-
-    if (log.device_id) {
-      logLine += ` <${log.device_id}>`;
-    }
-    
-    if (log.component_name) {
-      logLine += ` (${log.component_name})`;
-    }
-    
-    logLine += ` ${log.message}`;
-    
-    return logLine.trim();
-  }
+     // Return object with original log data + formatted string
+     return {
+       id: log.id,
+       filename: log.filename,
+       timestamp: log.timestamp,
+       thread_name: log.thread_name,
+       device_id: log.device_id,
+       component_name: log.component_name,
+       log_level: log.log_level,
+       time_bucket: log.time_bucket,
+       message: log.message,
+       formattedLog: formattedLog
+     };
+   }
 }
 
 // Export singleton instance for stateless service

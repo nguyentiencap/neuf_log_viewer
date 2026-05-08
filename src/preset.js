@@ -119,9 +119,48 @@ class PresetService {
   // ...existing code...
 
   /**
+   * Merge time ranges (timeFrom/timeTo) using intersection logic.
+   * Takes the larger timeFrom (most recent start) and smaller timeTo (earliest end).
+   * Handles both string and numeric (Unix seconds) timestamps.
+   * No-op if only one side has a time value — uses the available one.
+   * @param {string|number|null} userTime - User-provided time value
+   * @param {string|number|null} presetTime - Preset time value
+   * @param {'from'|'to'} type - 'from' for timeFrom, 'to' for timeTo
+   * @returns {string|number|null} Merged time value
+   */
+  static _mergeTimeRange(userTime, presetTime, type) {
+    if (!userTime && !presetTime) return null;
+    if (!userTime) return presetTime;
+    if (!presetTime) return userTime;
+
+    // Convert to comparable format (Unix seconds)
+    const userSec = typeof userTime === 'number' ? userTime : this._parseTimestampSec(userTime)?.floorSec;
+    const presetSec = typeof presetTime === 'number' ? presetTime : this._parseTimestampSec(presetTime)?.floorSec;
+
+    if (userSec === null || userSec === undefined || presetSec === null || presetSec === undefined) {
+      // If parse fails, return user value (user input takes precedence in case of error)
+      return userTime;
+    }
+
+    // For timeFrom: take the larger (more recent start) — creates narrower range
+    // For timeTo: take the smaller (earlier end) — creates narrower range
+    const selectedSec = type === 'from' ? Math.max(userSec, presetSec) : Math.min(userSec, presetSec);
+
+    // Return in same format as userTime (preserve original format)
+    if (typeof userTime === 'number') {
+      return selectedSec;
+    } else {
+      return this._formatUnixSec(selectedSec);
+    }
+  }
+
+  /**
    * Apply preset filters into an existing filters object (mutates in place).
    * Reads filters.preset (string or array), resolves against snapshotOptions,
    * and merges matching preset filters in order.
+   * For time ranges (timeFrom/timeTo): computes intersection when both preset and user have values.
+   * For array fields: merges values (combines multiple presets).
+   * For other fields: uses preset value if not already set by user.
    * No-op if filters.preset is empty or no preset matches.
    * @param {Object} filters - Filters object (will be mutated in place)
    * @param {Object} presets - filterOptions presets from base logs table
@@ -142,12 +181,19 @@ class PresetService {
         logger(`⚠️  Preset not found: "${presetId}"`);
         continue;
       }
-      // Merge array fields instead of overwriting to support combining multiple presets
+      // Merge preset filters into user filters
       for (const [key, value] of Object.entries(suggestion.filters)) {
-        if (Array.isArray(value) && Array.isArray(filters[key])) {
+        if (key === 'timeFrom' || key === 'timeTo') {
+          // Time range: compute intersection
+          filters[key] = this._mergeTimeRange(filters[key], value, key === 'timeFrom' ? 'from' : 'to');
+        } else if (Array.isArray(value) && Array.isArray(filters[key])) {
+          // Array field: merge values to support combining multiple presets
           filters[key] = [...new Set([...filters[key], ...value])];
         } else {
-          filters[key] = value;
+          // Other fields: use preset value if not already set
+          if (filters[key] === undefined || filters[key] === null || filters[key] === '') {
+            filters[key] = value;
+          }
         }
       }
     }
@@ -155,15 +201,20 @@ class PresetService {
 
   /**
    * Parse a log timestamp string to floor/ceil Unix seconds.
-   * @param {string} ts - "YYYY.MM.DD HH:mm:ss.SSS"
+   * Supports formats with and without milliseconds:
+   * - "YYYY.MM.DD HH:mm:ss.SSS" (with milliseconds)
+   * - "YYYY.MM.DD HH:mm:ss" (without milliseconds)
+   * @param {string} ts - Timestamp string
    * @returns {{ floorSec: number, ceilSec: number }|null}
    */
   static _parseTimestampSec(ts) {
-    const m = ts.match(/^(\d{4})\.(\d{2})\.(\d{2}) (\d{2}):(\d{2}):(\d{2})\.(\d{3})/);
+    // Match with optional milliseconds
+    const m = ts.match(/^(\d{4})\.(\d{2})\.(\d{2}) (\d{2}):(\d{2}):(\d{2})(?:\.(\d{3}))?/);
     if (!m) return null;
+    const ms = m[7] ? parseInt(m[7], 10) : 0;
     const unixMs = Date.UTC(
       parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10),
-      parseInt(m[4], 10), parseInt(m[5], 10), parseInt(m[6], 10), parseInt(m[7], 10)
+      parseInt(m[4], 10), parseInt(m[5], 10), parseInt(m[6], 10), ms
     );
     return {
       floorSec: Math.floor(unixMs / 1000),
@@ -211,7 +262,7 @@ class PresetService {
 
         const timeFromSec = parsedFrom.floorSec;
         const timeFromStr = PresetService._formatUnixSec(timeFromSec);
-        const presetId = `fujifilm_install_${deviceId}_${i + 1}`;
+        const presetId = `fujifilm_${deviceId}_install_${i + 1}`;
 
         let label, filters;
 
@@ -240,81 +291,6 @@ class PresetService {
 
     return presets;
   }
-
-  /**
-   * Generate preset suggestions based on current data.
-   * Suggestions are contextually aware: options already applied via currentFilters
-   * are not re-suggested.
-   *
-   * @param {Object} filterOptions - Options object from getFilterOptions()
-   * @param {string[]} filterOptions.devices - Device entries with device_id and count
-   * @param {string[]} filterOptions.components - Component entries with component_name and count
-   * @param {string[]} filterOptions.threads - Thread entries with thread_name and count
-   * @param {string[]} filterOptions.logLevels - Log level entries with log_level and count
-   * @param {number} filterOptions.totalLogs - Total number of logs matching current filters
-   * @returns {Object} Map of preset id to suggestion object:
-   *   { [id]: { id, label, description, filters } }
-   * Note: filters field is for internal API use (preset resolution); not exposed to clients.
-   */
-  static getPresetSuggestions(filterOptions = {}) {
-     const suggestions = {};
-     const {
-       devices = [],
-       components = [],
-       threads = [],
-       logLevels = []
-     } = filterOptions;
-
-      // Only return suggestions if there is some data to work with
-      const hasData = components.length > 0 || logLevels.length > 0 || devices.length > 0 || threads.length > 0;
-      if (!hasData) {
-          return suggestions;
-      }
-
-     // ── Component suggestions ─────────────────────────────────────────────────
-     if (components.length >= 5) {
-       // Take top 10 non-null components after filtering out nulls
-       const topComponents = components
-         .map(c => c.component_name)
-         .filter(Boolean)
-         .slice(0, 10);
-       if (topComponents.length > 0) {
-         suggestions["exclude_top_components"] = {
-           id: 'exclude_top_components',
-           label: `🔧 Exclude top ${topComponents.length} noisiest components`,
-           description: `Exclude the ${topComponents.length} most frequent components to reduce noise: ${topComponents.join(', ')}`,
-           filters: { componentExclude: topComponents }
-         };
-       }
-     }
-
-     // ── Log level suggestions ─────────────────────────────────────────────────
-     const hasErrors = logLevels.some(l => l.log_level === 'ERROR');
-     const hasWarnings = logLevels.some(l => l.log_level === 'WARN');
-
-     if (hasErrors || hasWarnings) {
-       const levels = [];
-       if (hasErrors) levels.push('ERROR');
-       if (hasWarnings) levels.push('WARN');
-       suggestions["errors_and_warnings"] = {
-         id: 'errors_and_warnings',
-         label: '⚠️ Show errors and warnings only',
-         description: `Filter to ${levels.join(' + ')} log levels only`,
-         filters: { logLevelInclude: levels }
-       };
-     }
-
-     if (hasErrors) {
-       suggestions["errors_only"] = {
-         id: 'errors_only',
-         label: '🔴 Show errors only',
-         description: 'Filter to ERROR log level only',
-         filters: { logLevelInclude: ['ERROR'] }
-       };
-     }
-
-     return suggestions;
-   }
 }
 
 module.exports = { PresetService };

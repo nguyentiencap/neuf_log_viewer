@@ -183,8 +183,10 @@ describe('scanLogs() return structure', () => {
 describe('Service integration', () => {
   test('parserService is properly injected with required methods', () => {
     expect(typeof logService.parserService.getTimeBucket).toBe('function');
-    expect(typeof logService.parserService.parsePhase1Line).toBe('function');
-    expect(typeof logService.parserService.parsePhase2Entry).toBe('function');
+    expect(typeof logService.parserService.parseLine).toBe('function');
+    expect(typeof logService.parserService.detectLogLineStart).toBe('function');
+    expect(typeof logService.parserService.normalizeComponentName).toBe('function');
+    expect(typeof logService.parserService.normalizeThreadName).toBe('function');
   });
   test('No instance state stored between operations', () => {
     const service1 = new NEUFLogService(mockLogger);

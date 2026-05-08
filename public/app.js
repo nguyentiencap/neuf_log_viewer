@@ -73,7 +73,7 @@
   function exportLogs() {
     const exportButton = $('#exportLogBtn');
     const requestFilters = buildRequestFilters();
-    const exportFormat = $('#exportFormatSelect').val() || 'api';
+    const exportFormat = $('#exportFormatSelect').val() || 'full';
 
     exportButton.prop('disabled', true).text('Exporting...');
 

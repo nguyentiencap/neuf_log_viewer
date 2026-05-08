@@ -13,104 +13,7 @@ function makeComponents(names) {
 function makeLogLevels(levels) {
   return levels.map(level => ({ log_level: level, count: 100 }));
 }
-// ─── empty / minimal data ─────────────────────────────────────────────────────
-describe('PresetService.getPresetSuggestions — empty / minimal data', () => {
-  test('Returns empty object for empty filter options', () => {
-    const suggestions = PresetService.getPresetSuggestions({});
-    expect(Object.keys(suggestions).length).toBe(0);
-  });
-  test('Returns empty object when no fields have data', () => {
-    const options = { components: [], logLevels: [], totalLogs: 0 };
-    const suggestions = PresetService.getPresetSuggestions(options);
-    expect(Object.keys(suggestions).length).toBe(0);
-  });
-});
-// ─── Component suggestions ────────────────────────────────────────────────────
-describe('PresetService.getPresetSuggestions — component suggestions', () => {
-  test('Suggests exclude_top_components when 5+ components exist', () => {
-    const options = { components: makeComponents(['A', 'B', 'C', 'D', 'E']) };
-    const suggestions = PresetService.getPresetSuggestions(options);
-    expect(Object.keys(suggestions)).toContain('exclude_top_components');
-  });
-  test('No exclude_top_components when fewer than 5 components', () => {
-    const options = { components: makeComponents(['A', 'B', 'C']) };
-    const suggestions = PresetService.getPresetSuggestions(options);
-    expect(Object.keys(suggestions)).not.toContain('exclude_top_components');
-  });
-  test('exclude_top_components caps at 10 entries', () => {
-    const names = Array.from({ length: 15 }, (_, i) => 'Comp' + i);
-    const options = { components: makeComponents(names) };
-    const suggestions = PresetService.getPresetSuggestions(options);
-    const suggestion = suggestions['exclude_top_components'];
-    expect(suggestion.filters.componentExclude.length).toBeLessThanOrEqual(10);
-  });
-});
-// ─── Log level suggestions ────────────────────────────────────────────────────
-describe('PresetService.getPresetSuggestions — log level suggestions', () => {
-  test('Suggests errors_and_warnings when ERROR and WARN present', () => {
-    const options = { logLevels: makeLogLevels(['DEBUG', 'INFO', 'WARN', 'ERROR']) };
-    const suggestions = PresetService.getPresetSuggestions(options);
-    expect(Object.keys(suggestions)).toContain('errors_and_warnings');
-  });
-  test('Suggests errors_only when ERROR level present', () => {
-    const options = { logLevels: makeLogLevels(['DEBUG', 'INFO', 'ERROR']) };
-    const suggestions = PresetService.getPresetSuggestions(options);
-    expect(Object.keys(suggestions)).toContain('errors_only');
-  });
-  test('No errors_only when ERROR not present', () => {
-    const options = { logLevels: makeLogLevels(['DEBUG', 'INFO', 'WARN']) };
-    const suggestions = PresetService.getPresetSuggestions(options);
-    expect(Object.keys(suggestions)).not.toContain('errors_only');
-  });
-  test('No errors_and_warnings when neither ERROR nor WARN present', () => {
-    const options = { logLevels: makeLogLevels(['DEBUG', 'INFO']) };
-    const suggestions = PresetService.getPresetSuggestions(options);
-    expect(Object.keys(suggestions)).not.toContain('errors_and_warnings');
-  });
-});
-// ─── Suggestion object shape ──────────────────────────────────────────────────
-describe('PresetService.getPresetSuggestions — suggestion object shape', () => {
-  test('Each suggestion has required fields: id, label, description, filters', () => {
-    const options = { logLevels: makeLogLevels(['ERROR', 'WARN']) };
-    const suggestions = PresetService.getPresetSuggestions(options);
-    const valid = Object.values(suggestions).every(s =>
-      typeof s.id === 'string' &&
-      typeof s.label === 'string' &&
-      typeof s.description === 'string' &&
-      typeof s.filters === 'object'
-    );
-    expect(valid).toBe(true);
-  });
-  test('Suggestion filters values are non-empty arrays', () => {
-    const options = { components: makeComponents(['A', 'B', 'C', 'D', 'E']) };
-    const suggestions = PresetService.getPresetSuggestions(options);
-    const valid = Object.values(suggestions).every(s =>
-      Object.values(s.filters).every(v => Array.isArray(v) && v.length > 0)
-    );
-    expect(valid).toBe(true);
-  });
-  test('Suggestion id matches its key in the map', () => {
-    const options = {
-      components: makeComponents(['A', 'B', 'C', 'D', 'E']),
-      logLevels: makeLogLevels(['ERROR'])
-    };
-    const suggestions = PresetService.getPresetSuggestions(options);
-    const valid = Object.entries(suggestions).every(([key, s]) => s.id === key);
-    expect(valid).toBe(true);
-  });
-});
-// ─── Combined scenario ────────────────────────────────────────────────────────
-describe('PresetService.getPresetSuggestions — combined scenario', () => {
-  test('Multiple suggestion types returned for rich data set', () => {
-    const options = {
-      components: makeComponents(['A', 'B', 'C', 'D', 'E', 'F']),
-      logLevels: makeLogLevels(['DEBUG', 'INFO', 'WARN', 'ERROR']),
-      totalLogs: 5000
-    };
-    const suggestions = PresetService.getPresetSuggestions(options);
-    expect(Object.keys(suggestions).length).toBeGreaterThanOrEqual(3);
-  });
-});
+
 // ─── applyPreset ──────────────────────────────────────────────────────────────
 describe('PresetService.applyPreset', () => {
   test('No-op when filters has no preset field', () => {
@@ -128,48 +31,244 @@ describe('PresetService.applyPreset', () => {
     PresetService.applyPreset(filters, {});
     expect(Object.keys(filters)).toEqual(['preset']);
   });
-  test('Applies preset by string id — errors_only', () => {
-    const presets = PresetService.getPresetSuggestions({ logLevels: makeLogLevels(['INFO', 'ERROR']) });
-    const filters = { preset: 'errors_only' };
-    PresetService.applyPreset(filters, presets);
-    expect(filters.logLevelInclude).toEqual(['ERROR']);
-  });
-  test('Applies preset by array id — errors_only', () => {
-    const presets = PresetService.getPresetSuggestions({ logLevels: makeLogLevels(['INFO', 'ERROR']) });
-    const filters = { preset: ['errors_only'] };
-    PresetService.applyPreset(filters, presets);
-    expect(filters.logLevelInclude).toEqual(['ERROR']);
-  });
-  test('Applies exclude_top_components preset', () => {
-    const presets = PresetService.getPresetSuggestions({ components: makeComponents(['A', 'B', 'C', 'D', 'E']) });
-    const filters = { preset: 'exclude_top_components' };
-    PresetService.applyPreset(filters, presets);
-    expect(Array.isArray(filters.componentExclude) && filters.componentExclude.length === 5).toBe(true);
-  });
-  test('Applies multiple presets from array', () => {
-    const presets = PresetService.getPresetSuggestions({
-      components: makeComponents(['A', 'B', 'C', 'D', 'E']),
-      logLevels: makeLogLevels(['INFO', 'ERROR'])
-    });
-    const filters = { preset: ['exclude_top_components', 'errors_only'] };
-    PresetService.applyPreset(filters, presets);
-    expect(Array.isArray(filters.componentExclude)).toBe(true);
-    expect(filters.logLevelInclude[0]).toBe('ERROR');
-  });
-  test('Unknown preset id is skipped without throwing', () => {
-    const presets = PresetService.getPresetSuggestions({ logLevels: makeLogLevels(['ERROR']) });
-    const filters = { preset: 'nonexistent_preset' };
-    const warnings = [];
-    PresetService.applyPreset(filters, presets, (msg) => warnings.push(msg));
-    expect(warnings.length).toBe(1);
-  });
-  test('Preset filters reflect the snapshot used to build presets', () => {
-    const presets = PresetService.getPresetSuggestions({ components: makeComponents(['A', 'B', 'C', 'D', 'E']) });
-    const filters = { preset: 'exclude_top_components' };
-    PresetService.applyPreset(filters, presets);
-    expect(filters.componentExclude).toEqual(['A', 'B', 'C', 'D', 'E']);
-  });
-});
+   // ─── Time range intersection tests ────────────────────────────────────────────
+   test('Time range intersection: both have timeFrom/timeTo (string format)', () => {
+     const presets = {
+       afternoon: {
+         id: 'afternoon',
+         label: 'Afternoon',
+         description: 'Afternoon preset',
+         filters: {
+           timeFrom: '2026.04.28 12:00:00',
+           timeTo: '2026.04.28 18:00:00'
+         }
+       }
+     };
+     const filters = {
+       preset: 'afternoon',
+       timeFrom: '2026.04.28 13:00:00',
+       timeTo: '2026.04.28 17:00:00'
+     };
+     PresetService.applyPreset(filters, presets);
+     // Should take larger timeFrom (13:00 > 12:00) and smaller timeTo (17:00 < 18:00)
+     expect(filters.timeFrom).toBe('2026.04.28 13:00:00');
+     expect(filters.timeTo).toBe('2026.04.28 17:00:00');
+   });
+   test('Time range intersection: preset wider than user range', () => {
+     const presets = {
+       wide_range: {
+         id: 'wide_range',
+         label: 'Wide range',
+         description: 'Wide preset',
+         filters: {
+           timeFrom: '2026.04.28 06:00:00',
+           timeTo: '2026.04.28 22:00:00'
+         }
+       }
+     };
+     const filters = {
+       preset: 'wide_range',
+       timeFrom: '2026.04.28 10:00:00',
+       timeTo: '2026.04.28 15:00:00'
+     };
+     PresetService.applyPreset(filters, presets);
+     // User range is narrower, should remain unchanged
+     expect(filters.timeFrom).toBe('2026.04.28 10:00:00');
+     expect(filters.timeTo).toBe('2026.04.28 15:00:00');
+   });
+   test('Time range intersection: preset narrower than user range', () => {
+     const presets = {
+       narrow_range: {
+         id: 'narrow_range',
+         label: 'Narrow range',
+         description: 'Narrow preset',
+         filters: {
+           timeFrom: '2026.04.28 10:00:00',
+           timeTo: '2026.04.28 15:00:00'
+         }
+       }
+     };
+     const filters = {
+       preset: 'narrow_range',
+       timeFrom: '2026.04.28 06:00:00',
+       timeTo: '2026.04.28 22:00:00'
+     };
+     PresetService.applyPreset(filters, presets);
+     // Preset range is narrower, should be used
+     expect(filters.timeFrom).toBe('2026.04.28 10:00:00');
+     expect(filters.timeTo).toBe('2026.04.28 15:00:00');
+   });
+   test('Time range intersection: only preset has timeFrom/timeTo', () => {
+     const presets = {
+       with_time: {
+         id: 'with_time',
+         label: 'With time',
+         description: 'Has time filters',
+         filters: {
+           timeFrom: '2026.04.28 12:00:00',
+           timeTo: '2026.04.28 18:00:00'
+         }
+       }
+     };
+     const filters = {
+       preset: 'with_time'
+     };
+     PresetService.applyPreset(filters, presets);
+     expect(filters.timeFrom).toBe('2026.04.28 12:00:00');
+     expect(filters.timeTo).toBe('2026.04.28 18:00:00');
+   });
+   test('Time range intersection: only user has timeFrom/timeTo', () => {
+     const presets = {
+       without_time: {
+         id: 'without_time',
+         label: 'Without time',
+         description: 'No time filters',
+         filters: {
+           logLevelInclude: ['ERROR']
+         }
+       }
+     };
+     const filters = {
+       preset: 'without_time',
+       timeFrom: '2026.04.28 10:00:00',
+       timeTo: '2026.04.28 20:00:00'
+     };
+     PresetService.applyPreset(filters, presets);
+     // User time should be preserved
+     expect(filters.timeFrom).toBe('2026.04.28 10:00:00');
+     expect(filters.timeTo).toBe('2026.04.28 20:00:00');
+     expect(filters.logLevelInclude).toEqual(['ERROR']);
+   });
+   test('Time range intersection: only preset has timeFrom (no timeTo)', () => {
+     const presets = {
+       from_only: {
+         id: 'from_only',
+         label: 'From only',
+         description: 'Only timeFrom',
+         filters: {
+           timeFrom: '2026.04.28 12:00:00'
+         }
+       }
+     };
+     const filters = {
+       preset: 'from_only',
+       timeFrom: '2026.04.28 10:00:00',
+       timeTo: '2026.04.28 20:00:00'
+     };
+     PresetService.applyPreset(filters, presets);
+     // Should take larger timeFrom
+     expect(filters.timeFrom).toBe('2026.04.28 12:00:00');
+     expect(filters.timeTo).toBe('2026.04.28 20:00:00');
+   });
+   test('Time range intersection: numeric (Unix seconds) timestamps', () => {
+     // Convert test dates to Unix seconds (numeric format)
+     const dateFrom = Date.UTC(2026, 3, 28, 12, 0, 0) / 1000;    // 2026.04.28 12:00:00
+     const dateTo = Date.UTC(2026, 3, 28, 18, 0, 0) / 1000;      // 2026.04.28 18:00:00
+     const userFrom = Date.UTC(2026, 3, 28, 13, 0, 0) / 1000;    // 2026.04.28 13:00:00
+     const userTo = Date.UTC(2026, 3, 28, 17, 0, 0) / 1000;      // 2026.04.28 17:00:00
+
+     const presets = {
+       unix_time: {
+         id: 'unix_time',
+         label: 'Unix time',
+         description: 'Unix seconds',
+         filters: {
+           timeFrom: dateFrom,
+           timeTo: dateTo
+         }
+       }
+     };
+     const filters = {
+       preset: 'unix_time',
+       timeFrom: userFrom,
+       timeTo: userTo
+     };
+     PresetService.applyPreset(filters, presets);
+     expect(filters.timeFrom).toBe(userFrom);
+     expect(filters.timeTo).toBe(userTo);
+   });
+   test('Time range intersection: mixed string and numeric timestamps', () => {
+     // Convert test dates to Unix seconds (numeric format)
+     const dateFrom = Date.UTC(2026, 3, 28, 12, 0, 0) / 1000;    // 2026.04.28 12:00:00
+     const dateTo = Date.UTC(2026, 3, 28, 18, 0, 0) / 1000;      // 2026.04.28 18:00:00
+     const userFrom = Date.UTC(2026, 3, 28, 13, 0, 0) / 1000;    // 2026.04.28 13:00:00
+     const userTo = Date.UTC(2026, 3, 28, 17, 0, 0) / 1000;      // 2026.04.28 17:00:00
+
+     const presets = {
+       mixed_time: {
+         id: 'mixed_time',
+         label: 'Mixed time',
+         description: 'Unix seconds',
+         filters: {
+           timeFrom: dateFrom,
+           timeTo: dateTo
+         }
+       }
+     };
+     const filters = {
+       preset: 'mixed_time',
+       timeFrom: '2026.04.28 13:00:00',
+       timeTo: '2026.04.28 17:00:00'
+     };
+     PresetService.applyPreset(filters, presets);
+     // Result should be in string format (user format)
+     expect(typeof filters.timeFrom).toBe('string');
+     expect(typeof filters.timeTo).toBe('string');
+     expect(filters.timeFrom).toBe('2026.04.28 13:00:00');
+     expect(filters.timeTo).toBe('2026.04.28 17:00:00');
+   });
+   test('Time range intersection: multiple presets with overlapping time ranges', () => {
+     const presets = {
+       morning: {
+         id: 'morning',
+         description: 'Morning',
+         filters: {
+           timeFrom: '2026.04.28 06:00:00',
+           timeTo: '2026.04.28 12:00:00'
+         }
+       },
+       business_hours: {
+         id: 'business_hours',
+         description: 'Business hours',
+         filters: {
+           timeFrom: '2026.04.28 09:00:00',
+           timeTo: '2026.04.28 17:00:00'
+         }
+       }
+     };
+     const filters = {
+       preset: ['morning', 'business_hours'],
+       timeFrom: '2026.04.28 08:00:00',
+       timeTo: '2026.04.28 15:00:00'
+     };
+     PresetService.applyPreset(filters, presets);
+     // Final range should be intersection of all: max(6:00, 9:00, 8:00) = 9:00, min(12:00, 17:00, 15:00) = 12:00
+     expect(filters.timeFrom).toBe('2026.04.28 09:00:00');
+     expect(filters.timeTo).toBe('2026.04.28 12:00:00');
+   });
+   test('Time range intersection: non-overlapping ranges result in empty range', () => {
+     const presets = {
+       early: {
+         id: 'early',
+         label: 'Early',
+         description: 'Early range',
+         filters: {
+           timeFrom: '2026.04.28 06:00:00',
+           timeTo: '2026.04.28 10:00:00'
+         }
+       }
+     };
+     const filters = {
+       preset: 'early',
+       timeFrom: '2026.04.28 15:00:00',
+       timeTo: '2026.04.28 20:00:00'
+     };
+     PresetService.applyPreset(filters, presets);
+     // Intersection of (6:00-10:00) and (15:00-20:00) is (15:00-10:00) which is invalid but technically set
+     expect(filters.timeFrom).toBe('2026.04.28 15:00:00');
+     expect(filters.timeTo).toBe('2026.04.28 10:00:00');
+   });
+ });
 // ─── loadUserPresets ──────────────────────────────────────────────────────────
 describe('PresetService.loadUserPresets', () => {
   test('Returns empty object when file does not exist', () => {

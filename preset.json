@@ -1,4 +1,38 @@
 {
+  "exclude_noisy_components": {
+    "id": "exclude_noisy_components",
+    "label": "🚫 Exclude Noisy components",
+    "description": "Exclude all noisy components",
+    "filters": { "componentExclude": [
+      "%Endpoint%", "%Historical%", "Dws%", "%Wiring%", "DwsWatchdog%",
+      "WedpDirectImpl",
+      "EventProcessingManagerFactory",
+      "NotificationsProvider",
+      "CustomAssetProvider",
+      "PersistenceFactory",
+      "ConnectionManager"
+    ] }
+  },
+  "errors_and_warnings": {
+    "id": "errors_and_warnings",
+    "label": "⚠️ Show errors and warnings only",
+    "description": "Filter to ERROR log levels only",
+    "filters": {
+      "logLevelInclude": [
+        "ERROR"
+      ]
+    }
+  },
+  "errors_only": {
+    "id": "errors_only",
+    "label": "🔴 Show errors only",
+    "description": "Filter to ERROR log level only",
+    "filters": {
+      "logLevelInclude": [
+        "ERROR"
+      ]
+    }
+  },
   "exclude_endpoint_tester": {
     "id": "exclude_endpoint_tester",
     "label": "🔌 Exclude Endpoint Tester components",
@@ -36,3 +70,4 @@
     "filters": { "componentInclude": [null] }
   }
 }
+

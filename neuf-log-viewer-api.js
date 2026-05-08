@@ -111,6 +111,22 @@ function parseFiltersFromRequest(query) {
   return logService.normalizeFilters(filters);
 }
 
+/**
+ * Escape CSV field value
+ * @param {*} value - Value to escape
+ * @returns {string} Escaped CSV value
+ */
+function escapeCSVValue(value) {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  const strValue = String(value);
+  if (strValue.includes(',') || strValue.includes('"') || strValue.includes('\n')) {
+    return '"' + strValue.replace(/"/g, '""') + '"';
+  }
+  return strValue;
+}
+
 
 
 
@@ -181,11 +197,8 @@ app.post('/filter_log', async (req, res) => {
       return;
     }
 
-    // Format logs at API layer
-    const formattedLogs = result.logs.map(log => ({
-      ...log,
-      formattedLog: logService.formatLogEntry(log, "api")
-    }));
+    // Format logs at API layer - formatLogEntry now returns object with formattedLog
+    const formattedLogs = result.logs.map(log => logService.formatLogEntry(log, "full"));
 
     res.json({ ...result, logs: formattedLogs, filterOptions: filterOptionsResult.data });
 
@@ -198,42 +211,116 @@ app.post('/filter_log', async (req, res) => {
 
 /**
  * POST /export_log
- * Export all logs matching current filters as a downloadable .log file.
+ * Export all logs matching current filters as a downloadable file.
  *
  * Body: {
  *   filters: { ...same as /filter_log },
  *   steps: [{ filters: ... }] (legacy compatibility),
- *   format: "api" | "compact" (optional, default: "api")
+ *   format: "full" | "compact" | "json" (optional, default: "full")
  * }
  */
 app.post('/export_log', async (req, res) => {
   try {
-    const { filters = {}, steps = [], format = 'api' } = req.body;
+    const { filters = {}, steps = [], format = 'full' } = req.body;
     const legacyStep = steps[0] && steps[0].filters ? steps[0].filters : {};
     const requestFilters = Object.keys(filters).length > 0 ? filters : legacyStep;
-    const exportFormat = format === 'compact' ? 'compact' : 'api';
+    const exportFormat = format === 'compact' ? 'compact' : format === 'csv' ? 'csv' : format === 'json' ? 'json' : 'full';
 
-    // Parse and normalize filters (API layer responsibility)
+    // ...existing code...
     const parsedFilters = parseFiltersFromRequest(requestFilters);
     await logService.applyPreset(FOLDER_PATH, parsedFilters);
 
     const exportPageSize = 5000;
     const firstPageResult = await logService.filterLogs(FOLDER_PATH, parsedFilters, { page: 1, pageSize: exportPageSize });
 
-    const exportedLines = firstPageResult.logs.map(log => logService.formatLogEntry(log, exportFormat));
+    // Format logs based on export format
+    let exportedData;
+    if (exportFormat === 'json' || exportFormat === 'csv') {
+      // For JSON and CSV, export raw log objects without formattedLog
+      exportedData = firstPageResult.logs;
+    } else {
+      // For 'full' and 'compact', format logs and extract formattedLog
+      exportedData = firstPageResult.logs.map(log => logService.formatLogEntry(log, exportFormat));
+    }
 
     for (let page = 2; page <= firstPageResult.totalPages; page++) {
       const pageResult = await logService.filterLogs(FOLDER_PATH, parsedFilters, { page, pageSize: exportPageSize });
-      const pageLines = pageResult.logs.map(log => logService.formatLogEntry(log, exportFormat));
-      exportedLines.push(...pageLines);
+      if (exportFormat === 'json' || exportFormat === 'csv') {
+        exportedData.push(...pageResult.logs);
+      } else {
+        const pageData = pageResult.logs.map(log => logService.formatLogEntry(log, exportFormat));
+        exportedData.push(...pageData);
+      }
     }
 
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const filename = `neuf-logs-export-${timestamp}.log`;
+    // Generate timestamp in local timezone: YYYY.MM.DD_HH-mm-ss
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const date = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const seconds = String(now.getSeconds()).padStart(2, '0');
+    const timestamp = `${year}.${month}.${date}_${hours}-${minutes}-${seconds}`;
 
-    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.send(exportedLines.join('\n'));
+    // Determine file extension and format suffix
+    let fileExtension;
+    let formatSuffix;
+
+    if (exportFormat === 'json') {
+      fileExtension = 'json';
+      formatSuffix = 'json';
+    } else if (exportFormat === 'csv') {
+      fileExtension = 'csv';
+      formatSuffix = 'csv';
+    } else if (exportFormat === 'compact') {
+      fileExtension = 'log';
+      formatSuffix = 'compact';
+    } else {
+      fileExtension = 'log';
+      formatSuffix = 'full';
+    }
+
+    const filename = `neuf-logs-export-${timestamp}-${formatSuffix}.${fileExtension}`;
+
+    if (exportFormat === 'json') {
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.send(JSON.stringify(exportedData, null, 2));
+    } else if (exportFormat === 'csv') {
+      // Convert raw logs to CSV format
+      const csvLines = [];
+
+      // CSV header
+      if (exportedData.length > 0) {
+        const headers = ['filename', 'timestamp', 'log_level', 'thread', 'device', 'component', 'message'];
+        csvLines.push(headers.map(h => escapeCSVValue(h)).join(','));
+
+        // CSV rows
+        for (const log of exportedData) {
+          const row = [
+            `(${log.filename})`,
+            log.timestamp,
+            `[${log.log_level}]`,
+            log.thread_name,
+            `<${log.device_id}>`,
+            `(${log.component_name})`,
+            log.message
+          ];
+          csvLines.push(row.map(v => escapeCSVValue(v)).join(','));
+        }
+      }
+
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.send(csvLines.join('\n'));
+    } else {
+      // For 'full' and 'compact' formats, export formattedLog strings
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      const exportedLines = exportedData.map(log => log.formattedLog);
+      res.send(exportedLines.join('\n'));
+    }
 
   } catch (error) {
     console.error('❌ Export logs error:', error);

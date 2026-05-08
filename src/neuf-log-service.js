@@ -92,6 +92,7 @@ class NEUFLogService {
   /**
    * Normalize filters object
    * Ensures arrays and removes empty values
+   * timeFrom/timeTo are kept as strings for readability, converted to unix timestamps only when building DB queries
    * @param {Object} filters - Raw filters object
    * @returns {Object} Normalized filters
    */
@@ -117,12 +118,10 @@ class NEUFLogService {
     // Remove empty search
     if (!filters.search) delete filters.search;
 
-    if (filters.timeFrom) {
-        filters.timeFrom = logParserService.getTimeBucket(filters.timeFrom);
-    }
-    if (filters.timeTo) {
-      filters.timeTo = logParserService.getTimeBucket(filters.timeTo);
-    }
+    // timeFrom/timeTo are kept as strings for readability
+    // They will be converted to unix timestamps only when building DB queries
+    if (!filters.timeFrom) delete filters.timeFrom;
+    if (!filters.timeTo) delete filters.timeTo;
 
     return filters;
   }
@@ -243,37 +242,28 @@ class NEUFLogService {
     const sqlDb = new SQL.Database();
     const { db, databaseService } = this._createDatabaseService(sqlDb);
 
-    // Create log file scanner service
     const scannerService = this.scannerService;
 
     // Get file count before scanning
     const logFiles = scannerService.findNeufLogFiles(logFolderPath);
     const filesScanned = logFiles.length;
 
-    // --- Phase 1: Scan files and store raw entries {filename, timestamp, rawContent} ---
-    databaseService.initRawLogsTable();
-    const insertRaw = databaseService.prepareInsertRaw();
-    const insertManyRaw = databaseService.createBatchInsertRaw(insertRaw);
+    // Scan all files, parse directly to log objects, batch insert into temp table
+    databaseService.initTempLogsTable();
+    const insertTemp = databaseService.prepareInsertTemp();
+    const insertManyTemp = databaseService.createBatchInsertTemp(insertTemp);
 
-    const totalRaw = await scannerService.parsePhase1Files(
-      logFolderPath,
-      (batch) => insertManyRaw(batch)
-    );
+    const totalLogs = await scannerService.parseFiles(logFolderPath, (batch) => insertManyTemp(batch));
 
-    if (totalRaw === 0) {
+    if (totalLogs === 0) {
       throw new Error('No logs were parsed. Please check the log format.');
     }
 
-    // --- Phase 2: Read from temp table ordered by timestamp ASC, parse to full log objects ---
-    const totalLogs = scannerService.parsePhase2Files(databaseService);
-
-    if (totalLogs === 0) {
-      throw new Error('Phase 2 parsing failed: no structured logs were parsed from the scanned raw entries.');
-    }
-
-    // Drop Phase 1 temp table
-    databaseService.dropRawLogsTable();
-    this.logger('🗑️  Phase 1 temp table dropped.');
+    // Init main logs table and insert from temp ordered by timestamp (SQLite handles sort)
+    databaseService.initDatabase();
+    databaseService.insertFromTempToLogs();
+    databaseService.dropTempLogsTable();
+    this.logger(`✅ Inserted ${totalLogs.toLocaleString()} entries into logs table.`);
 
     if (!fs.existsSync(dbDir)) {
       fs.mkdirSync(dbDir, { recursive: true });
@@ -281,10 +271,7 @@ class NEUFLogService {
 
     // Generate and save preset snapshot before export (UDFs still registered on scan-time connection)
     const presetsPath = PresetService.getPresetsPath(dbDir);
-    const filterOptions = databaseService.getFilterOptions('logs', false);
-    const basePresets = PresetService.getPresetSuggestions(filterOptions, {});
-    const installPresets = this._generateInstallPresets(databaseService);
-    const presets = { ...basePresets, ...installPresets };
+    const presets = this._generateInstallPresets(databaseService);
     this.logger(presets);
     PresetService.savePreset(presetsPath, presets, this.logger);
 

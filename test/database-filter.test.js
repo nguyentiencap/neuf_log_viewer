@@ -319,4 +319,34 @@ describe('executeFilterStep: time range (timeFrom / timeTo)', () => {
     );
     expect(count).toBe(2);
   });
+  test('timeFrom as string filters correctly', () => {
+    const svc = buildDatabaseService(SQL, SEED_LOGS);
+    const { count } = svc.executeFilterStep(
+      { timeFrom: '2026.04.28 09:02:00.000' },
+      'logs',
+      'filter_step_1'
+    );
+    expect(count).toBe(4);
+  });
+  test('timeTo as string filters correctly', () => {
+    const svc = buildDatabaseService(SQL, SEED_LOGS);
+    const { count } = svc.executeFilterStep(
+      { timeTo: '2026.04.28 09:01:00.000' },
+      'logs',
+      'filter_step_1'
+    );
+    expect(count).toBe(2);
+  });
+  test('timeFrom and timeTo as strings work together', () => {
+    const svc = buildDatabaseService(SQL, SEED_LOGS);
+    const { count } = svc.executeFilterStep(
+      {
+        timeFrom: '2026.04.28 09:01:00.000',
+        timeTo:   '2026.04.28 09:03:00.000'
+      },
+      'logs',
+      'filter_step_1'
+    );
+    expect(count).toBe(3);
+  });
 });

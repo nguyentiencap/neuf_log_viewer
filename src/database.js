@@ -5,6 +5,8 @@
  * Uses service object pattern to encapsulate dependencies
  */
 
+const { logParserService } = require('./log-parser');
+
 /**
  * Database Wrapper Class
  * Provides a wrapper around sql.js database for easier operations
@@ -195,13 +197,29 @@ class DatabaseService {
     addFilterClause('device', 'device_id', deviceInclude, deviceExclude);
     addFilterClause('component', 'component_name', componentInclude, componentExclude);
 
-    // Time bucket range filter using BETWEEN (Unix timestamps)
-    if (filters.timeFrom != null || filters.timeTo != null) {
-      const timeFrom = filters.timeFrom != null ? filters.timeFrom : 0;
-      const timeTo = filters.timeTo != null ? filters.timeTo : 2147483647;
-      where += ' AND time_bucket BETWEEN ? AND ?';
-      params.push(timeFrom, timeTo);
-    }
+     // Time bucket range filter using BETWEEN (Unix timestamps)
+     // Convert string timeFrom/timeTo to unix timestamps
+     if (filters.timeFrom != null || filters.timeTo != null) {
+       let timeFromUnix = 0;
+       let timeToUnix = 2147483647;
+
+       if (filters.timeFrom != null) {
+         const timeFromTs = typeof filters.timeFrom === 'string'
+           ? logParserService.getTimeBucket(filters.timeFrom)
+           : filters.timeFrom;
+         timeFromUnix = timeFromTs != null ? timeFromTs : 0;
+       }
+
+       if (filters.timeTo != null) {
+         const timeToTs = typeof filters.timeTo === 'string'
+           ? logParserService.getTimeBucket(filters.timeTo)
+           : filters.timeTo;
+         timeToUnix = timeToTs != null ? timeToTs : 2147483647;
+       }
+
+       where += ' AND time_bucket BETWEEN ? AND ?';
+       params.push(timeFromUnix, timeToUnix);
+     }
 
     // Search text: always try both LIKE (plain text) and REGEXP (pattern) with OR
     if (filters.search) {
@@ -310,61 +328,67 @@ class DatabaseService {
   }
   
   /**
-   * Initialize the Phase 1 raw logs temp table.
-   * Stores raw entries {filename, timestamp, raw_content} for two-phase scanning.
+   * Initialize temp table for parsed log objects during scan.
+   * Same columns as logs table but no id (auto-assigned on final insert).
    */
-  initRawLogsTable() {
+  initTempLogsTable() {
     this.db.exec(`
-      CREATE TABLE IF NOT EXISTS raw_phase1_logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+      CREATE TABLE IF NOT EXISTS temp_parsed_logs (
         filename TEXT NOT NULL,
         timestamp TEXT NOT NULL,
+        thread_name TEXT NOT NULL,
+        device_id TEXT,
+        component_name TEXT,
+        log_level TEXT,
         time_bucket INTEGER,
-        raw_content TEXT NOT NULL
-      );
-      CREATE INDEX IF NOT EXISTS idx_raw_timestamp ON raw_phase1_logs(timestamp);
+        message TEXT NOT NULL
+      )
     `);
   }
 
   /**
-   * Prepare insert statement for raw Phase 1 batch operations
+   * Prepare insert statement for temp parsed logs table
    */
-  prepareInsertRaw() {
+  prepareInsertTemp() {
     return this.db.prepare(`
-      INSERT INTO raw_phase1_logs (filename, timestamp, time_bucket, raw_content)
-      VALUES (?, ?, ?, ?)
+      INSERT INTO temp_parsed_logs (filename, timestamp, thread_name, device_id,
+                                    component_name, log_level, time_bucket, message)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
   }
 
   /**
-   * Create transaction for batch inserts into raw Phase 1 table
+   * Create transaction for batch inserts into temp parsed logs table
    */
-  createBatchInsertRaw(insertStmt) {
-    return this.db.transaction((entries) => {
-      for (const entry of entries) {
-        insertStmt.run(entry.filename, entry.timestamp, entry.timeBucket, entry.rawContent);
+  createBatchInsertTemp(insertStmt) {
+    return this.db.transaction((logs) => {
+      for (const log of logs) {
+        insertStmt.run(
+          log.filename, log.timestamp, log.threadName, log.deviceId,
+          log.componentName, log.logLevel, log.timeBucket, log.message
+        );
       }
     });
   }
 
   /**
-   * Retrieve Phase 1 raw entries ordered by timestamp ASC, id ASC for Phase 2 processing.
-   * Uses pagination (LIMIT/OFFSET) to keep memory bounded for large log sets.
-   * @param {number} limit - Number of rows per page (default: 5000)
-   * @param {number} offset - Row offset for pagination (default: 0)
-   * @returns {Array} Array of {filename, timestamp, raw_content} objects
+   * Insert all rows from temp table into logs table ordered by timestamp ASC.
+   * Delegates sorting to SQLite for efficiency.
    */
-  getRawLogsPage(limit = 5000, offset = 0) {
-    return this.db.prepare(
-      'SELECT filename, timestamp, time_bucket, raw_content FROM raw_phase1_logs ORDER BY timestamp ASC, id ASC LIMIT ? OFFSET ?'
-    ).all(limit, offset);
+  insertFromTempToLogs() {
+    this.db.exec(`
+      INSERT INTO logs (filename, timestamp, thread_name, device_id, component_name, log_level, time_bucket, message)
+      SELECT filename, timestamp, thread_name, device_id, component_name, log_level, time_bucket, message
+      FROM temp_parsed_logs
+      ORDER BY timestamp ASC
+    `);
   }
 
   /**
-   * Drop the Phase 1 raw logs table after two-phase scanning is complete.
+   * Drop the temp parsed logs table after scan is complete.
    */
-  dropRawLogsTable() {
-    this.db.exec('DROP TABLE IF EXISTS raw_phase1_logs');
+  dropTempLogsTable() {
+    this.db.exec('DROP TABLE IF EXISTS temp_parsed_logs');
   }
 
   /**
