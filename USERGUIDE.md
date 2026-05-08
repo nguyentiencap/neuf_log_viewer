@@ -1,8 +1,28 @@
-# NEUF Log Viewer User Guide (End Users)
+# NEUF Log Viewer
 
-This document is for end users who use the `neuf-log-viewer.exe` release package.
+## The Problem
 
-## 1) Preparation
+NEUF DWS systems produce very large log files — often hundreds of thousands of lines across many files — from dozens of components running on multiple devices simultaneously. When you need to diagnose an issue, finding the relevant entries is extremely time-consuming because:
+
+- Logs span multiple files with no single view
+- Many high-volume components (endpoints, historical data, wiring, DWS internals) produce noise that buries the signal
+- Searching without context means repeatedly scrolling through irrelevant lines
+- LLM-assisted analysis is impractical when the raw log volume far exceeds token budgets
+
+## The Approach
+
+NEUF Log Viewer solves this by **indexing all logs into a local SQLite database** on first run, then exposing fast, composable filters through both a Web UI and a CLI:
+
+1. **Presets** — one-click noise reduction (exclude known high-volume components, show errors only, etc.)
+2. **Multi-dimensional filters** — narrow by log level, device, component, thread, filename, and time range simultaneously
+3. **Keyword / regex search** — full regex support so you can search for `Exception|Error|Timeout` or `ERROR.*Connection` in one pass
+4. **Context lines** — show N lines surrounding each match so you see what happened before and after
+5. **Pagination** — browse large result sets in manageable pages
+6. **Export** — download the filtered result as a plain `.log` file
+
+
+## Installation & Running
+
 
 - Operating system: Windows (64-bit)
 - A log folder to analyze (containing NEUF `.log` files)
@@ -14,8 +34,6 @@ This document is for end users who use the `neuf-log-viewer.exe` release package
 > Keep `neuf-log-viewer.exe` and `preset.json` in the same folder.
 
 ---
-
-## 2) Run the Application
 
 Open Command Prompt or PowerShell in the folder containing `neuf-log-viewer.exe`, then run:
 
@@ -35,25 +53,66 @@ When started successfully, the app launches the Web UI at:
 
 ---
 
-## 3) Use the Web Interface
+# Web Interface (Web UI)
 
-In your browser, open `http://localhost:3001` and follow these steps:
+Open a web browser and go to: **http://localhost:3001**
 
-1. Select filters in the left sidebar (log level, device, component, time range, search keyword, etc.)
-2. Click **Apply** to filter logs
-3. Use **Presets** to quickly apply predefined filter sets
-4. Use **Pagination** to move through large result sets
-5. Click **Export** to download all filtered results as a `.log` file
+### Presets
+
+Presets are saved filter combinations that remove common noise or focus on a specific concern. Select one or more from the **Presets** panel to apply them before or alongside your own filters.
+
+Built-in presets (defined in `preset.json`):
+
+| Preset ID | What it does |
+|---|---|
+| `errors_and_warnings` | Show ERROR and WARN levels |
+| `errors_only` | Show ERROR level only |
+| `exclude_noisy_components` | Exclude Endpoint, Historical, Dws*, Wiring, and other high-volume components |
+| `exclude_endpoint_tester` | Exclude components matching `%Endpoint%` |
+| `exclude_historical_data` | Exclude components matching `%Historical%` |
+| `exclude_dws` | Exclude components matching `Dws%` |
+| `exclude_wiring` | Exclude components matching `%Wiring%` |
+| `component_not_null` | Show only logs that have a component name |
+| `component_null` | Show only logs that have no component name |
+
+### Log Filtering
+
+Enter filter criteria in the sidebar on the left:
+
+| Field | Description |
+|---|---|
+| **Log Level** | Select which levels to show (ERROR, WARN, INFO, DEBUG) |
+| **Thread** | Include or exclude thread names |
+| **Device** | Include or exclude device IDs |
+| **Component** | Include or exclude component names |
+| **Filename** | Include or exclude source log files |
+| **Time From / To** | Restrict results to a time range |
+| **Search** | Full-text or **regex** search in the message field |
+| **Context Lines** | Show N lines before and after each search match |
+
+Click **Apply** to run the filter. Results appear in the main panel with total count and pagination controls.
+
+### Pagination
+- Adjust the number of logs per page (default: 50)
+- Navigate between pages using the navigation buttons
+- View total matching logs and number of pages
+
+### Export
+Export all logs matching the current filters to a `.log` file:
+- Click the **Export** button
+- The file downloads to your computer
+- Filename format: `neuf-logs-export-<timestamp>.log`
+
+---
 
 ### Quick Filtering Tips
 
-- Start with the `errors_and_warnings` preset to reduce noise
-- If you need specific issues, enter keywords in **Search**
+- If you need specific issues, enter keywords in **Search**, Regex is supportted
 - Increase **Context Lines** to include lines before/after each match
 
 ---
 
-## 4) Where is the database stored?
+## Where is the database stored?
 
 The app automatically creates a database on first run at:
 
@@ -75,7 +134,7 @@ If you add new logs or want a full re-index:
 
 ---
 
-## 5) Common Issues
+## Common Issues
 
 ### Cannot open `http://localhost:3001`
 
