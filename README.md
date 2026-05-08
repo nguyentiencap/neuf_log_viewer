@@ -57,8 +57,8 @@ npm start ./logs
 
 The server will be available at: **http://localhost:3001**
 
-> The database is built automatically on first run inside `<log-folder>/log-filter-db/neuf-logs.db`.  
-> To force a full re-index, delete that file and restart.
+> The database is built automatically on first run inside `<log-folder>/log-filter-db/`.  
+> To force a full re-index, delete the entire `log-filter-db/` directory and restart.
 
 ---
 
@@ -151,8 +151,8 @@ npm run cli -- filter  <folder> [options]
 
 Multi-value options accept repeated flags or comma-separated values:
 ```bash
---preset "errors,warnings"          # comma-separated
---preset errors --preset warnings   # repeated flags
+--preset "errors_and_warnings,exclude_noisy_components"   # comma-separated
+--preset errors_and_warnings --preset exclude_noisy_components   # repeated flags
 ```
 
 ### Output Formats
@@ -214,12 +214,12 @@ The `--search` flag supports full JavaScript-compatible regular expressions:
 
 | Pattern | Purpose |
 |---|---|
-| `Exception\|Error` | Either word |
+| `Exception` or `Error` | Match either word — use `Exception\|Error` in the shell |
 | `ERROR.*Connection` | ERROR logs containing "Connection" |
-| `Timeout\|Hung\|Stalled` | Any timeout-related message |
-| `OutOfMemory\|OOM` | Memory crisis search |
-| `Connection.*refused\|denied` | Connection problems |
-| `java:\d+` | Stack trace line references |
+| `Timeout` or `Hung` or `Stalled` | Any timeout-related message — `Timeout\|Hung\|Stalled` |
+| `OutOfMemory` or `OOM` | Memory crisis — `OutOfMemory\|OOM` |
+| `Connection.*refused` | Connection refused errors |
+| `java:[0-9]+` | Stack trace line references |
 
 ---
 
@@ -322,7 +322,7 @@ Example:
 ## Directory Structure
 
 ```
-📁 neuf_log_viewer/          ← project root
+📁 <project-root>/           ← wherever you cloned the repo
 ├── neuf-log-viewer-api.js   ← Web UI / API server entry point
 ├── neuf-log-viewer-cli.js   ← CLI entry point
 ├── preset.json              ← custom preset definitions
@@ -350,8 +350,8 @@ Example:
 
 If you add new log files or want a clean re-index:
 ```bash
-rm -rf ./logs/log-filter-db
-npm start ./logs
+rm -rf <log-folder>/log-filter-db
+npm start <log-folder>
 ```
 
 ---
