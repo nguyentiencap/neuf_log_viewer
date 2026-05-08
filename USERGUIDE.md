@@ -53,7 +53,7 @@ When started successfully, the app launches the Web UI at:
 
 ---
 
-# Web Interface (Web UI)
+## Web Interface (Web UI)
 
 Open a web browser and go to: **http://localhost:3001**
 
@@ -104,6 +104,24 @@ Export all logs matching the current filters to a `.log` file:
 - Filename format: `neuf-logs-export-<timestamp>.log`
 
 ---
+
+### Creating Custom Presets
+
+Edit `preset.json` at the project root (same folder as `neuf-log-viewer-api.js`). Add new entries using this structure:
+
+```json
+{
+  "my_preset_id": {
+    "id": "my_preset_id",
+    "label": "🏷️ My Preset Label",
+    "description": "Short description shown in the UI",
+    "filters": {
+      "componentExclude": ["%MyNoisyComponent%"],
+      "logLevelInclude": ["ERROR", "WARN"]
+    }
+  }
+}
+```
 
 ### Quick Filtering Tips
 
