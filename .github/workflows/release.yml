@@ -19,7 +19,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '18'
-          cache: 'npm'
 
       - name: Install dependencies
         run: npm install
@@ -27,10 +26,13 @@ jobs:
       - name: Build binary
         run: npm run build
 
+      - name: Package release zip
+        run: |
+          cd build
+          zip neuf-log-viewer.zip neuf-log-viewer.exe preset.json README.md
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            build/neuf-log-viewer.exe
-            build/preset.json
+          files: build/neuf-log-viewer.zip
           generate_release_notes: true
