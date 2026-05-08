@@ -3,15 +3,22 @@
   "version": "1.0.0",
   "description": "NEUF Log Viewer - REST API with client-side rendering for log analysis",
   "main": "neuf-log-viewer-api.js",
+  "bin": {
+    "neuf-log-viewer-api": "neuf-log-viewer-api.js"
+  },
   "scripts": {
     "start": "node neuf-log-viewer-api.js",
     "api": "node neuf-log-viewer-api.js",
     "cli": "node neuf-log-viewer-cli.js",
-    "test": "jest --testEnvironment node"
+    "test": "jest --testEnvironment node",
+    "build": "pkg . --output build/neuf-log-viewer.exe --target node18-win-x64 && npm run build:copy-assets",
+    "build:copy-assets": "copy preset.json build\\"
   },
   "jest": {
     "testEnvironment": "node",
-    "testMatch": ["**/test/**/*.test.js"]
+    "testMatch": [
+      "**/test/**/*.test.js"
+    ]
   },
   "keywords": [
     "log",
@@ -26,6 +33,22 @@
     "sql.js": "^1.10.0"
   },
   "devDependencies": {
-    "jest": "^30.3.0"
+    "jest": "^30.3.0",
+    "pkg": "^5.8.1"
+  },
+  "pkg": {
+    "scripts": [
+      "src/**/*.js",
+      "test/**/*.js"
+    ],
+    "assets": [
+      "public/**/*",
+      "preset.json",
+      "node_modules/sql.js/dist/sql-wasm.wasm"
+    ],
+    "targets": [
+      "node18-win-x64"
+    ],
+    "output": "build/neuf-log-viewer-api"
   }
 }
