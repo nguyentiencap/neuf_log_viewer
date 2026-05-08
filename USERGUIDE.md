@@ -61,6 +61,12 @@ Trong trình duyệt, mở `http://localhost:3001` và thao tác:
 <log-folder>/log-filter-db/neuf-logs.db
 ```
 
+Trên Windows, đường dẫn này tương đương:
+
+```text
+<log-folder>\log-filter-db\neuf-logs.db
+```
+
 Nếu bạn thêm log mới hoặc muốn index lại toàn bộ:
 
 1. Tắt ứng dụng
