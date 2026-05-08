@@ -16,10 +16,11 @@
   "errors_and_warnings": {
     "id": "errors_and_warnings",
     "label": "⚠️ Show errors and warnings only",
-    "description": "Filter to ERROR log levels only",
+    "description": "Filter to ERROR and WARN log levels only",
     "filters": {
       "logLevelInclude": [
-        "ERROR"
+        "ERROR",
+        "WARN"
       ]
     }
   },
