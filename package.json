@@ -12,7 +12,7 @@
     "cli": "node neuf-log-viewer-cli.js",
     "test": "jest --testEnvironment node",
     "build": "pkg . --output build/neuf-log-viewer.exe --target node18-win-x64 && npm run build:copy-assets",
-    "build:copy-assets": "copy preset.json build\\"
+    "build:copy-assets": "node -e \"const fs=require('fs');if(!fs.existsSync('build'))fs.mkdirSync('build');fs.copyFileSync('preset.json','build/preset.json');\""
   },
   "jest": {
     "testEnvironment": "node",
