@@ -10,11 +10,13 @@
  *   3. Paginated output so an LLM can read large logs in manageable batches
  *
  * Usage:
- *   node neuf-log-viewer-cli.js scan    <folder>
- *   node neuf-log-viewer-cli.js clear   <folder>
  *   node neuf-log-viewer-cli.js presets <folder>
  *   node neuf-log-viewer-cli.js filter  <folder> [options]
  *   node neuf-log-viewer-cli.js help
+ *
+ * Note: The database is built automatically on the first run of 'filter' or
+ * 'presets'. To force a re-index, delete the log-filter-db/ folder inside
+ * the log folder and run again.
  */
 
 const path = require('path');
@@ -79,11 +81,9 @@ Usage:
   node neuf-log-viewer-cli.js <command> <folder> [options]
 
 Commands:
-  scan    <folder>           Index log files and build the search database.
-                             Safe to run multiple times (skips if DB exists).
-  clear   <folder>           Delete the search database so logs can be re-indexed.
   presets <folder>           List all available preset filters with their IDs.
   filter  <folder> [opts]    Filter and search logs with optional pagination.
+                             The database is built automatically on first run.
   help                       Show this help message.
 
 Filter options:
@@ -107,23 +107,23 @@ Output formats:
   json     Machine-readable JSON — ideal for LLM structured processing.
 
 Typical LLM workflow:
-  # Step 1 — Index the folder once
-  node neuf-log-viewer-cli.js scan /path/to/logs
-
-  # Step 2 — See what presets are available
+  # Step 1 — See what presets are available (auto-indexes on first run)
   node neuf-log-viewer-cli.js presets /path/to/logs
 
-  # Step 3 — Apply a preset to reduce noise, show first batch
+  # Step 2 — Apply a preset to reduce noise, show first batch
   node neuf-log-viewer-cli.js filter /path/to/logs \\
       --preset errors_and_warnings --page 1 --page-size 100
 
-  # Step 4 — Search for a keyword of interest
+  # Step 3 — Search for a keyword of interest
   node neuf-log-viewer-cli.js filter /path/to/logs \\
       --search "NullPointerException" --format json
 
-  # Step 5 — Read next batch
+  # Step 4 — Read next batch
   node neuf-log-viewer-cli.js filter /path/to/logs \\
       --preset errors_and_warnings --page 2 --page-size 100
+
+Note: To force a re-index, delete the log-filter-db/ folder inside the log
+folder and run the command again.
 `;
 
 // ---------------------------------------------------------------------------
@@ -206,39 +206,30 @@ function printPaginationInfo(result) {
 // Commands
 // ---------------------------------------------------------------------------
 
-async function cmdScan(folder, _opts, logService) {
-  process.stdout.write(`📁 Scanning folder: ${folder}\n`);
+/**
+ * Ensure the database exists for the given folder, scanning if necessary.
+ * Writes a status line to stdout when indexing is triggered.
+ * @param {string} folder - Resolved folder path
+ * @param {Object} logService - NEUFLogService instance
+ */
+async function ensureDatabase(folder, logService) {
+  if (logService.isDatabaseScanned(folder)) return;
 
-  await logService.initialize();
+  process.stdout.write(`📁 Indexing logs in: ${folder}\n`);
   const result = await logService.scanLogs(folder);
 
   if (!result.success) {
-    process.stderr.write(`❌ Scan failed: ${result.error || 'unknown error'}\n`);
+    process.stderr.write(`❌ Indexing failed: ${result.error || 'unknown error'}\n`);
     process.exit(1);
   }
 
-  if (result.data && result.data.alreadyScanned) {
-    process.stdout.write(`ℹ️  Database already exists. Use 'clear' first to re-index.\n`);
-    process.stdout.write(`   DB path: ${result.data.dbPath}\n`);
-  } else {
-    process.stdout.write(`✅ Indexed ${result.data.totalLogs} log entries from ${result.data.filesScanned} file(s).\n`);
-    process.stdout.write(`   DB path: ${result.data.dbPath}\n`);
-  }
-}
-
-async function cmdClear(folder, _opts, logService) {
-  const result = logService.clearDatabase(folder);
-  if (result.success) {
-    process.stdout.write(`✅ ${result.message}\n`);
-    process.stdout.write(`   DB path: ${result.dbPath}\n`);
-  } else {
-    process.stderr.write(`❌ Clear failed: ${result.error}\n`);
-    process.exit(1);
-  }
+  process.stdout.write(`✅ Indexed ${result.data.totalLogs} log entries from ${result.data.filesScanned} file(s).\n\n`);
 }
 
 async function cmdPresets(folder, _opts, logService) {
   await logService.initialize();
+  await ensureDatabase(folder, logService);
+
   const result = await logService.getPresetSuggestions(folder);
 
   if (!result.success) {
@@ -267,6 +258,7 @@ async function cmdPresets(folder, _opts, logService) {
 
 async function cmdFilter(folder, opts, logService) {
   await logService.initialize();
+  await ensureDatabase(folder, logService);
 
   const filters = buildFilters(opts);
   const normalizedFilters = logService.normalizeFilters(filters);
@@ -343,12 +335,6 @@ async function main() {
 
   try {
     switch (command) {
-      case 'scan':
-        await cmdScan(resolvedFolder, options, logService);
-        break;
-      case 'clear':
-        await cmdClear(resolvedFolder, options, logService);
-        break;
       case 'presets':
         await cmdPresets(resolvedFolder, options, logService);
         break;
