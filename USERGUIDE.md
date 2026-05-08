@@ -1,92 +1,92 @@
-# Hướng dẫn sử dụng NEUF Log Viewer (End User)
+# NEUF Log Viewer User Guide (End Users)
 
-Tài liệu này dành cho người dùng cuối khi sử dụng bản phát hành `neuf-log-viewer.exe`.
+This document is for end users who use the `neuf-log-viewer.exe` release package.
 
-## 1) Chuẩn bị
+## 1) Preparation
 
-- Hệ điều hành: Windows (64-bit)
-- Có thư mục log cần phân tích (chứa các file `.log` của NEUF)
-- File tải về từ Release gồm:
+- Operating system: Windows (64-bit)
+- A log folder to analyze (containing NEUF `.log` files)
+- Release package files:
   - `neuf-log-viewer.exe`
   - `preset.json`
   - `USERGUIDE.md`
 
-> Giữ `neuf-log-viewer.exe` và `preset.json` trong cùng một thư mục.
+> Keep `neuf-log-viewer.exe` and `preset.json` in the same folder.
 
 ---
 
-## 2) Chạy ứng dụng
+## 2) Run the Application
 
-Mở Command Prompt hoặc PowerShell tại thư mục chứa `neuf-log-viewer.exe`, sau đó chạy:
+Open Command Prompt or PowerShell in the folder containing `neuf-log-viewer.exe`, then run:
 
 ```powershell
-.\neuf-log-viewer.exe <duong-dan-den-thu-muc-log>
+.\neuf-log-viewer.exe <path-to-log-folder>
 ```
 
-Ví dụ:
+Example:
 
 ```powershell
 .\neuf-log-viewer.exe D:\logs\NEUF
 ```
 
-Khi chạy thành công, ứng dụng sẽ khởi động Web UI tại:
+When started successfully, the app launches the Web UI at:
 
 - **http://localhost:3001**
 
 ---
 
-## 3) Sử dụng giao diện Web
+## 3) Use the Web Interface
 
-Trong trình duyệt, mở `http://localhost:3001` và thao tác:
+In your browser, open `http://localhost:3001` and follow these steps:
 
-1. Chọn bộ lọc ở cột bên trái (log level, device, component, thời gian, từ khóa tìm kiếm...)
-2. Bấm **Apply** để lọc log
-3. Dùng **Presets** để áp dụng nhanh các bộ lọc có sẵn
-4. Dùng **Pagination** để chuyển trang khi kết quả nhiều
-5. Bấm **Export** để tải toàn bộ kết quả lọc ra file `.log`
+1. Select filters in the left sidebar (log level, device, component, time range, search keyword, etc.)
+2. Click **Apply** to filter logs
+3. Use **Presets** to quickly apply predefined filter sets
+4. Use **Pagination** to move through large result sets
+5. Click **Export** to download all filtered results as a `.log` file
 
-### Gợi ý lọc nhanh
+### Quick Filtering Tips
 
-- Bắt đầu với preset `errors_and_warnings` để giảm nhiễu
-- Nếu cần tìm theo lỗi cụ thể, nhập từ khóa vào ô **Search**
-- Có thể tăng **Context Lines** để xem thêm log trước/sau dòng khớp
+- Start with the `errors_and_warnings` preset to reduce noise
+- If you need specific issues, enter keywords in **Search**
+- Increase **Context Lines** to include lines before/after each match
 
 ---
 
-## 4) Dữ liệu database được lưu ở đâu?
+## 4) Where is the database stored?
 
-Ứng dụng tự tạo database khi chạy lần đầu tại:
+The app automatically creates a database on first run at:
 
 ```text
 <log-folder>/log-filter-db/neuf-logs.db
 ```
 
-Trên Windows, đường dẫn này tương đương:
+On Windows, this path is equivalent to:
 
 ```text
 <log-folder>\log-filter-db\neuf-logs.db
 ```
 
-Nếu bạn thêm log mới hoặc muốn index lại toàn bộ:
+If you add new logs or want a full re-index:
 
-1. Tắt ứng dụng
-2. Xóa thư mục `log-filter-db` trong thư mục log
-3. Chạy lại `neuf-log-viewer.exe`
+1. Stop the application
+2. Delete the `log-filter-db` folder inside your log folder
+3. Run `neuf-log-viewer.exe` again
 
 ---
 
-## 5) Lỗi thường gặp
+## 5) Common Issues
 
-### Không mở được `http://localhost:3001`
+### Cannot open `http://localhost:3001`
 
-- Kiểm tra cửa sổ terminal có báo lỗi không
-- Đảm bảo command chạy đúng đường dẫn thư mục log
-- Thử chạy lại ứng dụng
+- Check whether the terminal window shows an error
+- Make sure you provided the correct log folder path
+- Restart the application
 
-### Báo đường dẫn thư mục log không tồn tại
+### Error: log folder path does not exist
 
-- Kiểm tra lại đường dẫn truyền vào lệnh chạy
-- Nếu đường dẫn có khoảng trắng, đặt trong dấu nháy kép:
+- Verify the path passed to the run command
+- If the path contains spaces, wrap it in double quotes:
 
 ```powershell
 .\neuf-log-viewer.exe "D:\My Logs\NEUF"
