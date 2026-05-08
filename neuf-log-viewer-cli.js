@@ -31,7 +31,6 @@ const { NEUFLogService } = require('./src/neuf-log-service');
  * Parse process.argv into { command, folder, options }.
  * Supports:
  *   --flag value      (string)
- *   --flag val1,val2  (comma-separated → array)
  *   Repeated --flag   (accumulated into array)
  */
 function parseArgs(argv) {
@@ -208,22 +207,21 @@ function printPaginationInfo(result) {
 
 /**
  * Ensure the database exists for the given folder, scanning if necessary.
- * Writes a status line to stdout when indexing is triggered.
+ * Writes status lines to stderr so stdout remains clean (e.g. for JSON output).
  * @param {string} folder - Resolved folder path
  * @param {Object} logService - NEUFLogService instance
  */
 async function ensureDatabase(folder, logService) {
   if (logService.isDatabaseScanned(folder)) return;
 
-  process.stdout.write(`📁 Indexing logs in: ${folder}\n`);
-  const result = await logService.scanLogs(folder);
-
-  if (!result.success) {
-    process.stderr.write(`❌ Indexing failed: ${result.error || 'unknown error'}\n`);
+  process.stderr.write(`📁 Indexing logs in: ${folder}\n`);
+  try {
+    const result = await logService.scanLogs(folder);
+    process.stderr.write(`✅ Indexed ${result.data.totalLogs} log entries from ${result.data.filesScanned} file(s).\n\n`);
+  } catch (err) {
+    process.stderr.write(`❌ Indexing failed: ${err.message || 'unknown error'}\n`);
     process.exit(1);
   }
-
-  process.stdout.write(`✅ Indexed ${result.data.totalLogs} log entries from ${result.data.filesScanned} file(s).\n\n`);
 }
 
 async function cmdPresets(folder, _opts, logService) {
