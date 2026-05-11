@@ -55,7 +55,7 @@ class LogFileScannerService {
    * @param {string} logFolderPath - Path to log folder
    * @param {Function} onBatchReady - Callback receiving each batch of parsed log objects
    * @param {string[]|null} precomputedFiles - Optional pre-computed file list (avoids double scan)
-   * @returns {Promise<number>} Total number of parsed log entries
+   * @returns {Promise<Object>} { totalEntries, fileStats: [{filename, lines, entries}, ...] }
    */
   async parseFiles(logFolderPath, onBatchReady, precomputedFiles = null) {
     this.logger('🔍 Scanning log folder:', logFolderPath);
@@ -64,7 +64,7 @@ class LogFileScannerService {
 
     if (logFiles.length === 0) {
       this.logger('❌ No NEUF-*.log.* files found.');
-      return 0;
+      return { totalEntries: 0, fileStats: [] };
     }
 
     this.logger(`📁 Found ${logFiles.length} log file(s):`);
@@ -75,6 +75,7 @@ class LogFileScannerService {
     let batch = [];
     let totalLines = 0;
     let totalEntries = 0;
+    const fileStats = [];
 
     for (const file of logFiles) {
       const filename = path.basename(file);
@@ -139,6 +140,7 @@ class LogFileScannerService {
       }
 
       this.logger(`  ✅ ${fileLines} lines / ${fileEntries} entries.`);
+      fileStats.push({ filename: path.relative(logFolderPath, file), lines: fileLines, entries: fileEntries });
     }
 
     // Flush remaining batch
@@ -150,7 +152,7 @@ class LogFileScannerService {
     this.logger(`✅ Scan complete! Total lines: ${totalLines.toLocaleString()}, entries: ${totalEntries.toLocaleString()}`);
     this.logger('');
 
-    return totalEntries;
+    return { totalEntries, fileStats };
   }
 
 }
