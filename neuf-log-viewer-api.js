@@ -363,7 +363,9 @@ async function main() {
     const scanResult = await logService.scanLogs(FOLDER_PATH);
     
     if (scanResult.success) {
-      console.log(`✅ Scanned ${scanResult.totalLogs} log entries from ${scanResult.filesScanned} files`);
+      if (scanResult.data && !scanResult.data.alreadyScanned) {
+        console.log(`✅ Scanned ${scanResult.data.totalLogs} log entries from ${scanResult.data.filesScanned} files`);
+      }
     } else {
       console.error('❌ Failed to scan logs:', scanResult.error);
       process.exit(1);
@@ -391,7 +393,9 @@ async function main() {
     });
     
   } catch (error) {
-    console.error('❌ Failed to start server:', error);
+    console.error('');
+    console.error('❌ Failed to start server:');
+    console.error(error.message || error);
     process.exit(1);
   }
 }
