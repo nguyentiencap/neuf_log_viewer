@@ -25,28 +25,12 @@ Agent guidance for NEUF Log Viewer - Node.js log viewer with SQLite backend.
 - Transaction pattern: `db.transaction(fn)(items)`
 
 ### Testing
-- Import helpers from `test/test-helpers.js`
-- Run: `node test/<file>.test.js` (NOT npm test/jest)
-- Use custom `runTest()` and `assertEqual()` (NOT jest/mocha)
+- Test framework: Jest
+- Run all tests: `npm test`
+- Run one file: `npx jest test/<file>.test.js`
+- Write tests using `describe()`, `test()`, and `expect()`
 
-**Helper Functions:**
-- `assertEqual(actual, expected, message)` - compare & report
-- `runTest(testName, testFn)` - run test & track stats
-- `printSection(title)` - section header
-- `printSummary(suiteName)` - summary & exit (0=pass, 1=fail)
-- `resetStats()` - reset stats
-- `getStats()` - returns `{total, passed, failed}`
-
-**Create Test:**
-1. Create file in `test/`
-2. Import: `const { assertEqual, runTest, printSection, printSummary } = require('./test-helpers');`
-3. Import module: `const { MyService } = require('../lib/my-service');`
-4. Write tests with `runTest()` + descriptive names
-5. Group with `printSection()`
-6. End with `printSummary('SUITE NAME')`
-7. Run: `node test/my-service.test.js`
-
-**Best Practices:** Clear names, one assertion/test, test edge cases, use `printSection()` to organize, document in `assertEqual()` messages
+**Best Practices:** clear names, focused assertions, edge-case coverage, and stable test data
 
 ### Filter Presets
 - Defined in `filter_preset.json` at root
