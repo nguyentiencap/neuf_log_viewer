@@ -207,6 +207,21 @@ class NEUFLogService {
   }
 
   /**
+   * Delete the database file if it exists and invalidate related caches.
+   * Used as a safety-net cleanup when a scan produces 0 entries, ensuring
+   * no stale or empty DB file is left on disk.
+   * @param {string} dbPath - Database file path
+   * @param {string} folderPath - Log folder path (used to invalidate caches)
+   */
+  _clearDbFile(dbPath, folderPath) {
+    if (fs.existsSync(dbPath)) {
+      fs.unlinkSync(dbPath);
+      this._invalidateFolderCaches(folderPath);
+      this.logger(`🗑️  Removed empty database: ${dbPath}`);
+    }
+  }
+
+  /**
    * Persist SQL.js database to disk
    * @param {Object} db - Database wrapper
    * @param {string} dbDir - Database directory
@@ -260,6 +275,7 @@ class NEUFLogService {
     const filesScanned = logFiles.length;
 
     if (filesScanned === 0) {
+      this._clearDbFile(dbPath, folderPath);
       throw new Error(
         `No NEUF log files found in: ${logFolderPath}\n` +
         `\nLog files must be named NEUF-*.log (e.g. NEUF-device.log, NEUF-app-2024.log).\n` +
@@ -282,6 +298,7 @@ class NEUFLogService {
     const totalLogs = await scannerService.parseFiles(logFolderPath, (batch) => insertManyTemp(batch), logFiles);
 
     if (totalLogs === 0) {
+      this._clearDbFile(dbPath, folderPath);
       throw new Error(
         `Found ${filesScanned} NEUF-*.log file(s) in ${logFolderPath} but could not parse any log entries.\n` +
         `\nPlease check that the log files use the correct format.\n` +
