@@ -176,6 +176,54 @@ describe('scanLogs() return structure', () => {
       if (fs.existsSync(testFolder)) fs.rmdirSync(testFolder);
     }
   });
+
+  test('Throws "No NEUF log files found" error for empty folder', async () => {
+    const testFolder = path.join(TEST_DIR, 'empty-folder-test-jest-' + Date.now());
+    fs.mkdirSync(testFolder, { recursive: true });
+    try {
+      await expect(logService.scanLogs(testFolder))
+        .rejects.toThrow(/No NEUF log files found in:/);
+    } finally {
+      fs.rmSync(testFolder, { recursive: true, force: true });
+    }
+  });
+
+  test('"No NEUF log files found" error mentions naming requirement', async () => {
+    const testFolder = path.join(TEST_DIR, 'empty-folder-naming-jest-' + Date.now());
+    fs.mkdirSync(testFolder, { recursive: true });
+    try {
+      await expect(logService.scanLogs(testFolder))
+        .rejects.toThrow(/NEUF-\*\.log/);
+    } finally {
+      fs.rmSync(testFolder, { recursive: true, force: true });
+    }
+  });
+
+  test('Throws "could not parse" error when NEUF-*.log file has no valid entries', async () => {
+    const testFolder = path.join(TEST_DIR, 'bad-format-test-jest-' + Date.now());
+    fs.mkdirSync(testFolder, { recursive: true });
+    const logFile = path.join(testFolder, 'NEUF-test.log');
+    fs.writeFileSync(logFile, 'This is not a valid NEUF log line\nNeither is this\n');
+    try {
+      await expect(logService.scanLogs(testFolder))
+        .rejects.toThrow(/NEUF-\*\.log file\(s\).*could not parse/);
+    } finally {
+      fs.rmSync(testFolder, { recursive: true, force: true });
+    }
+  });
+
+  test('"could not parse" error includes file count', async () => {
+    const testFolder = path.join(TEST_DIR, 'bad-format-count-jest-' + Date.now());
+    fs.mkdirSync(testFolder, { recursive: true });
+    fs.writeFileSync(path.join(testFolder, 'NEUF-a.log'), 'not valid\n');
+    fs.writeFileSync(path.join(testFolder, 'NEUF-b.log'), 'also not valid\n');
+    try {
+      await expect(logService.scanLogs(testFolder))
+        .rejects.toThrow(/Found 2 NEUF-\*\.log file\(s\)/);
+    } finally {
+      fs.rmSync(testFolder, { recursive: true, force: true });
+    }
+  });
 });
 // ============================================================================
 // Service integration

@@ -54,12 +54,13 @@ class LogFileScannerService {
    * Sorting is delegated to SQLite when inserting from temp table into logs.
    * @param {string} logFolderPath - Path to log folder
    * @param {Function} onBatchReady - Callback receiving each batch of parsed log objects
+   * @param {string[]|null} precomputedFiles - Optional pre-computed file list (avoids double scan)
    * @returns {Promise<number>} Total number of parsed log entries
    */
-  async parseFiles(logFolderPath, onBatchReady) {
+  async parseFiles(logFolderPath, onBatchReady, precomputedFiles = null) {
     this.logger('🔍 Scanning log folder:', logFolderPath);
 
-    const logFiles = this.findNeufLogFiles(logFolderPath);
+    const logFiles = precomputedFiles || this.findNeufLogFiles(logFolderPath);
 
     if (logFiles.length === 0) {
       this.logger('❌ No NEUF-*.log.* files found.');

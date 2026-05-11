@@ -360,7 +360,16 @@ async function main() {
     
     console.log('');
     console.log('🔍 Scanning logs...');
-    const scanResult = await logService.scanLogs(FOLDER_PATH);
+
+    let scanResult;
+    try {
+      scanResult = await logService.scanLogs(FOLDER_PATH);
+    } catch (scanError) {
+      console.error('');
+      console.error('❌ Failed to scan logs:');
+      console.error(scanError.message || scanError);
+      process.exit(0);
+    }
     
     if (scanResult.success) {
       if (scanResult.data && !scanResult.data.alreadyScanned) {
@@ -395,7 +404,7 @@ async function main() {
   } catch (error) {
     console.error('');
     console.error('❌ Failed to start server:');
-    console.error(error.message || error);
+    console.error(error.stack || error.message || error);
     process.exit(0);
   }
 }

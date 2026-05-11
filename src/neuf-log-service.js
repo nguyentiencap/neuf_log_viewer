@@ -220,6 +220,23 @@ class NEUFLogService {
 
 
   /**
+   * Returns the expected log format and example lines for use in error messages.
+   * @returns {string}
+   */
+  _getExpectedFormatHelpText() {
+    return (
+      `\nExpected log format (each line):\n` +
+      `  YYYY.MM.DD HH:mm:ss.SSS [LEVEL] ThreadName: Message\n` +
+      `  YYYY.MM.DD HH:mm:ss.SSS [LEVEL] class ClassName: ThreadName: Message\n` +
+      `  YYYY.MM.DD HH:mm:ss.SSS [LEVEL] class ClassName: ThreadName: <DeviceID> (com.example.component) Message\n` +
+      `\nExample:\n` +
+      `  2024.01.15 10:30:45.123 [INFO] main: Application started\n` +
+      `  2024.01.15 10:30:45.123 [INFO] class com.example.Main: main: Application started\n` +
+      `  2024.01.15 10:30:46.456 [DEBUG] class com.example.Worker: worker-1: <device-001> (com.example.app) Initializing`
+    );
+  }
+
+  /**
    * Scan log folder and create database
    * @param {string} folderPath - Path to log folder
    * @returns {Object} Scan result with statistics
@@ -238,45 +255,37 @@ class NEUFLogService {
 
     this.logger('📊 Scanning and indexing logs...');
 
-    const SQL = await this.getSQL();
-    const sqlDb = new SQL.Database();
-    const { db, databaseService } = this._createDatabaseService(sqlDb);
-
-    const scannerService = this.scannerService;
-
-    // Get file count before scanning
-    const logFiles = scannerService.findNeufLogFiles(logFolderPath);
+    // Check for matching log files BEFORE initialising SQL.js to fail fast
+    const logFiles = this.scannerService.findNeufLogFiles(logFolderPath);
     const filesScanned = logFiles.length;
 
     if (filesScanned === 0) {
       throw new Error(
         `No NEUF log files found in: ${logFolderPath}\n` +
         `\nLog files must be named NEUF-*.log (e.g. NEUF-device.log, NEUF-app-2024.log).\n` +
-        `\nExpected log format (each line):\n` +
-        `  YYYY.MM.DD HH:mm:ss.SSS [LEVEL] [class ClassName]: ThreadName: Message\n` +
-        `  YYYY.MM.DD HH:mm:ss.SSS [LEVEL] [class ClassName]: ThreadName: <DeviceID> (com.example.component) Message\n` +
-        `\nExample:\n` +
-        `  2024.01.15 10:30:45.123 [INFO] [class com.example.Main]: main: Application started\n` +
-        `  2024.01.15 10:30:46.456 [DEBUG] [class com.example.Worker]: worker-1: <device-001> (com.example.app) Initializing`
+        this._getExpectedFormatHelpText()
       );
     }
 
-    // Scan all files, parse directly to log objects, batch insert into temp table
+    const SQL = await this.getSQL();
+    const sqlDb = new SQL.Database();
+    const { db, databaseService } = this._createDatabaseService(sqlDb);
+
+    const scannerService = this.scannerService;
+
+    // Scan all files, parse directly to log objects, batch insert into temp table.
+    // Pass the pre-computed logFiles list to avoid a second directory scan.
     databaseService.initTempLogsTable();
     const insertTemp = databaseService.prepareInsertTemp();
     const insertManyTemp = databaseService.createBatchInsertTemp(insertTemp);
 
-    const totalLogs = await scannerService.parseFiles(logFolderPath, (batch) => insertManyTemp(batch));
+    const totalLogs = await scannerService.parseFiles(logFolderPath, (batch) => insertManyTemp(batch), logFiles);
 
     if (totalLogs === 0) {
       throw new Error(
-        `Found ${filesScanned} file(s) in ${logFolderPath} but could not parse any log entries.\n` +
-        `\nPlease check that the log files use the correct format (each line):\n` +
-        `  YYYY.MM.DD HH:mm:ss.SSS [LEVEL] [class ClassName]: ThreadName: Message\n` +
-        `  YYYY.MM.DD HH:mm:ss.SSS [LEVEL] [class ClassName]: ThreadName: <DeviceID> (com.example.component) Message\n` +
-        `\nExample:\n` +
-        `  2024.01.15 10:30:45.123 [INFO] [class com.example.Main]: main: Application started\n` +
-        `  2024.01.15 10:30:46.456 [DEBUG] [class com.example.Worker]: worker-1: <device-001> (com.example.app) Initializing`
+        `Found ${filesScanned} NEUF-*.log file(s) in ${logFolderPath} but could not parse any log entries.\n` +
+        `\nPlease check that the log files use the correct format.\n` +
+        this._getExpectedFormatHelpText()
       );
     }
 
