@@ -18,7 +18,8 @@ const fs = require('fs');
 const { NEUFLogService } = require('./src/neuf-log-service');
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const BASE_PORT = parseInt(process.env.PORT || '3001', 10);
+const MAX_PORT_ATTEMPTS = 10;
 
 // Parse command-line arguments - folderPath is REQUIRED
 const args = process.argv.slice(2);
@@ -351,6 +352,37 @@ app.get('/health', (req, res) => {
 app.use(express.static(path.join(__dirname, 'public')));
 
 /**
+ * Try to listen on successive ports starting from basePort.
+ * Returns a promise that resolves with the port actually bound.
+ * @param {number} basePort - First port to try
+ * @param {number} maxAttempts - How many ports to try before giving up
+ * @returns {Promise<number>} The port that was successfully bound
+ */
+function startServer(basePort, maxAttempts) {
+  return new Promise((resolve, reject) => {
+    const tryPort = (port) => {
+      if (port >= basePort + maxAttempts) {
+        reject(new Error(
+          `Could not find an available port. Tried ports ${basePort}–${port - 1}.`
+        ));
+        return;
+      }
+      const server = app.listen(port);
+      server.once('listening', () => resolve(port));
+      server.once('error', (err) => {
+        if (err.code === 'EADDRINUSE') {
+          console.log(`⚠️  Port ${port} is in use, trying ${port + 1}...`);
+          server.close(() => tryPort(port + 1));
+        } else {
+          reject(err);
+        }
+      });
+    };
+    tryPort(basePort);
+  });
+}
+
+/**
  * Start server
  */
 async function main() {
@@ -380,26 +412,26 @@ async function main() {
       process.exit(0);
     }
     
-    app.listen(PORT, () => {
-      console.log('');
-      console.log('╔════════════════════════════════════════╗');
-      console.log('║   🚀 NEUF Log Viewer API v1.0         ║');
-      console.log('╚════════════════════════════════════════╝');
-      console.log('');
-      console.log(`🌐 API Server running at http://localhost:${PORT}`);
-      console.log(`📊 Web UI available at http://localhost:${PORT}`);
-      console.log('');
-      console.log(`📁 Folder path: ${FOLDER_PATH}`);
-      console.log('');
-      console.log('📋 Available endpoints:');
-      console.log('  POST   /filter_log           - Filter logs (includes filterOptions)');
-      console.log('  POST   /export_log           - Export filtered logs');
-      console.log('  POST   /preset_suggestions   - Get preset filter suggestions');
-      console.log('  GET    /health               - Health check');
-      console.log('');
-      console.log('Press Ctrl+C to stop the server');
-      console.log('');
-    });
+    const actualPort = await startServer(BASE_PORT, MAX_PORT_ATTEMPTS);
+
+    console.log('');
+    console.log('╔════════════════════════════════════════╗');
+    console.log('║   🚀 NEUF Log Viewer API v1.0         ║');
+    console.log('╚════════════════════════════════════════╝');
+    console.log('');
+    console.log(`🌐 API Server running at http://localhost:${actualPort}`);
+    console.log(`📊 Web UI available at http://localhost:${actualPort}`);
+    console.log('');
+    console.log(`📁 Folder path: ${FOLDER_PATH}`);
+    console.log('');
+    console.log('📋 Available endpoints:');
+    console.log('  POST   /filter_log           - Filter logs (includes filterOptions)');
+    console.log('  POST   /export_log           - Export filtered logs');
+    console.log('  POST   /preset_suggestions   - Get preset filter suggestions');
+    console.log('  GET    /health               - Health check');
+    console.log('');
+    console.log('Press Ctrl+C to stop the server');
+    console.log('');
     
   } catch (error) {
     console.error('');
