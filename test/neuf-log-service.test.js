@@ -176,6 +176,86 @@ describe('scanLogs() return structure', () => {
       if (fs.existsSync(testFolder)) fs.rmdirSync(testFolder);
     }
   });
+
+  test('Throws "No NEUF log files found" error for empty folder', async () => {
+    const testFolder = path.join(TEST_DIR, 'empty-folder-test-jest-' + Date.now());
+    fs.mkdirSync(testFolder, { recursive: true });
+    try {
+      await expect(logService.scanLogs(testFolder))
+        .rejects.toThrow(/No NEUF log files found in:/);
+    } finally {
+      fs.rmSync(testFolder, { recursive: true, force: true });
+    }
+  });
+
+  test('"No NEUF log files found" error mentions naming requirement', async () => {
+    const testFolder = path.join(TEST_DIR, 'empty-folder-naming-jest-' + Date.now());
+    fs.mkdirSync(testFolder, { recursive: true });
+    try {
+      await expect(logService.scanLogs(testFolder))
+        .rejects.toThrow(/NEUF-\*\.log/);
+    } finally {
+      fs.rmSync(testFolder, { recursive: true, force: true });
+    }
+  });
+
+  test('Throws "could not parse" error when NEUF-*.log file has no valid entries', async () => {
+    const testFolder = path.join(TEST_DIR, 'bad-format-test-jest-' + Date.now());
+    fs.mkdirSync(testFolder, { recursive: true });
+    const logFile = path.join(testFolder, 'NEUF-test.log');
+    fs.writeFileSync(logFile, 'This is not a valid NEUF log line\nNeither is this\n');
+    try {
+      await expect(logService.scanLogs(testFolder))
+        .rejects.toThrow(/NEUF-\*\.log file\(s\).*could not parse/);
+    } finally {
+      fs.rmSync(testFolder, { recursive: true, force: true });
+    }
+  });
+
+  test('"could not parse" error includes file count', async () => {
+    const testFolder = path.join(TEST_DIR, 'bad-format-count-jest-' + Date.now());
+    fs.mkdirSync(testFolder, { recursive: true });
+    fs.writeFileSync(path.join(testFolder, 'NEUF-a.log'), 'not valid\n');
+    fs.writeFileSync(path.join(testFolder, 'NEUF-b.log'), 'also not valid\n');
+    try {
+      await expect(logService.scanLogs(testFolder))
+        .rejects.toThrow(/Found 2 NEUF-\*\.log file\(s\)/);
+    } finally {
+      fs.rmSync(testFolder, { recursive: true, force: true });
+    }
+  });
+
+  test('DB file is removed when scan finds no matching files (stale DB cleanup)', async () => {
+    const testFolder = path.join(TEST_DIR, 'stale-db-empty-' + Date.now());
+    const dbDir = path.join(testFolder, 'log-filter-db');
+    const dbPath = path.join(dbDir, 'neuf-logs.db');
+    // Pre-create a stale DB file; verify _clearDbFile removes it
+    fs.mkdirSync(dbDir, { recursive: true });
+    fs.writeFileSync(dbPath, 'stale');
+    logService._clearDbFile(dbPath, testFolder);
+    try {
+      expect(fs.existsSync(dbPath)).toBe(false);
+    } finally {
+      fs.rmSync(testFolder, { recursive: true, force: true });
+    }
+  });
+
+  test('DB file is removed when NEUF-*.log files exist but parse 0 entries (stale DB cleanup)', async () => {
+    const testFolder = path.join(TEST_DIR, 'stale-db-bad-format-' + Date.now());
+    const dbDir = path.join(testFolder, 'log-filter-db');
+    const dbPath = path.join(dbDir, 'neuf-logs.db');
+    // Place a NEUF log file with invalid content; no DB file present so scanLogs runs through
+    fs.mkdirSync(dbDir, { recursive: true });
+    fs.writeFileSync(path.join(testFolder, 'NEUF-test.log'), 'not a valid log line\n');
+    try {
+      await expect(logService.scanLogs(testFolder))
+        .rejects.toThrow(/could not parse/);
+      // After the scan attempt, no DB file should exist
+      expect(fs.existsSync(dbPath)).toBe(false);
+    } finally {
+      fs.rmSync(testFolder, { recursive: true, force: true });
+    }
+  });
 });
 // ============================================================================
 // Service integration

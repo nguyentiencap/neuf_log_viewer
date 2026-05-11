@@ -207,6 +207,21 @@ class NEUFLogService {
   }
 
   /**
+   * Delete the database file if it exists and invalidate related caches.
+   * Used as a safety-net cleanup when a scan produces 0 entries, ensuring
+   * no stale or empty DB file is left on disk.
+   * @param {string} dbPath - Database file path
+   * @param {string} folderPath - Log folder path (used to invalidate caches)
+   */
+  _clearDbFile(dbPath, folderPath) {
+    if (fs.existsSync(dbPath)) {
+      fs.unlinkSync(dbPath);
+      this._invalidateFolderCaches(folderPath);
+      this.logger(`🗑️  Removed empty database: ${dbPath}`);
+    }
+  }
+
+  /**
    * Persist SQL.js database to disk
    * @param {Object} db - Database wrapper
    * @param {string} dbDir - Database directory
@@ -218,6 +233,23 @@ class NEUFLogService {
     this.logger(`💾 Database saved to ${dbPath}`);
   }
 
+
+  /**
+   * Returns the expected log format and example lines for use in error messages.
+   * @returns {string}
+   */
+  _getExpectedFormatHelpText() {
+    return (
+      `\nExpected log format (each line):\n` +
+      `  YYYY.MM.DD HH:mm:ss.SSS [LEVEL] ThreadName: Message\n` +
+      `  YYYY.MM.DD HH:mm:ss.SSS [LEVEL] class ClassName: ThreadName: Message\n` +
+      `  YYYY.MM.DD HH:mm:ss.SSS [LEVEL] class ClassName: ThreadName: <DeviceID> (com.example.component) Message\n` +
+      `\nExample:\n` +
+      `  2024.01.15 10:30:45.123 [INFO] main: Application started\n` +
+      `  2024.01.15 10:30:45.123 [INFO] class com.example.Main: main: Application started\n` +
+      `  2024.01.15 10:30:46.456 [DEBUG] class com.example.Worker: worker-1: <device-001> (com.example.app) Initializing`
+    );
+  }
 
   /**
    * Scan log folder and create database
@@ -238,25 +270,40 @@ class NEUFLogService {
 
     this.logger('📊 Scanning and indexing logs...');
 
+    // Check for matching log files BEFORE initialising SQL.js to fail fast
+    const logFiles = this.scannerService.findNeufLogFiles(logFolderPath);
+    const filesScanned = logFiles.length;
+
+    if (filesScanned === 0) {
+      this._clearDbFile(dbPath, folderPath);
+      throw new Error(
+        `No NEUF log files found in: ${logFolderPath}\n` +
+        `\nLog files must be named NEUF-*.log (e.g. NEUF-device.log, NEUF-app-2024.log).\n` +
+        this._getExpectedFormatHelpText()
+      );
+    }
+
     const SQL = await this.getSQL();
     const sqlDb = new SQL.Database();
     const { db, databaseService } = this._createDatabaseService(sqlDb);
 
     const scannerService = this.scannerService;
 
-    // Get file count before scanning
-    const logFiles = scannerService.findNeufLogFiles(logFolderPath);
-    const filesScanned = logFiles.length;
-
-    // Scan all files, parse directly to log objects, batch insert into temp table
+    // Scan all files, parse directly to log objects, batch insert into temp table.
+    // Pass the pre-computed logFiles list to avoid a second directory scan.
     databaseService.initTempLogsTable();
     const insertTemp = databaseService.prepareInsertTemp();
     const insertManyTemp = databaseService.createBatchInsertTemp(insertTemp);
 
-    const totalLogs = await scannerService.parseFiles(logFolderPath, (batch) => insertManyTemp(batch));
+    const totalLogs = await scannerService.parseFiles(logFolderPath, (batch) => insertManyTemp(batch), logFiles);
 
     if (totalLogs === 0) {
-      throw new Error('No logs were parsed. Please check the log format.');
+      this._clearDbFile(dbPath, folderPath);
+      throw new Error(
+        `Found ${filesScanned} NEUF-*.log file(s) in ${logFolderPath} but could not parse any log entries.\n` +
+        `\nPlease check that the log files use the correct format.\n` +
+        this._getExpectedFormatHelpText()
+      );
     }
 
     // Init main logs table and insert from temp ordered by timestamp (SQLite handles sort)
