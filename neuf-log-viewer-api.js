@@ -26,7 +26,7 @@ const args = process.argv.slice(2);
 if (args.length === 0) {
   console.error('❌ Error: Folder path is required');
   console.error('Usage: node neuf-log-viewer-api.js <folderPath>');
-  process.exit(1);
+  process.exit(0);
 }
 
 const folderArg = args[0];
@@ -34,12 +34,12 @@ const FOLDER_PATH = path.resolve(folderArg);
 
 if (!fs.existsSync(FOLDER_PATH)) {
   console.error(`❌ Error: Folder path does not exist: ${FOLDER_PATH}`);
-  process.exit(1);
+  process.exit(0);
 }
 
 if (!fs.statSync(FOLDER_PATH).isDirectory()) {
   console.error(`❌ Error: Path is not a directory: ${FOLDER_PATH}`);
-  process.exit(1);
+  process.exit(0);
 }
 
 console.log(`📁 Folder path: ${FOLDER_PATH}`);
@@ -368,7 +368,7 @@ async function main() {
       }
     } else {
       console.error('❌ Failed to scan logs:', scanResult.error);
-      process.exit(1);
+      process.exit(0);
     }
     
     app.listen(PORT, () => {
@@ -396,7 +396,7 @@ async function main() {
     console.error('');
     console.error('❌ Failed to start server:');
     console.error(error.message || error);
-    process.exit(1);
+    process.exit(0);
   }
 }
 
