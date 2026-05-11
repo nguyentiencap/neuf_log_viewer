@@ -226,20 +226,12 @@ describe('scanLogs() return structure', () => {
   });
 
   test('DB file is removed when scan finds no matching files (stale DB cleanup)', async () => {
-    const testFolder = path.join(TEST_DIR, 'stale-db-empty-jest-' + Date.now());
+    const testFolder = path.join(TEST_DIR, 'stale-db-empty-' + Date.now());
     const dbDir = path.join(testFolder, 'log-filter-db');
     const dbPath = path.join(dbDir, 'neuf-logs.db');
-    // Pre-create a stale DB file to simulate leftover from a previous scan
+    // Pre-create a stale DB file; verify _clearDbFile removes it
     fs.mkdirSync(dbDir, { recursive: true });
     fs.writeFileSync(dbPath, 'stale');
-    // Temporarily remove the existing-DB early-exit so we hit the 0-files path
-    // We achieve this by deleting the DB first and placing it back, then doing a
-    // fresh scan with NO log files in the folder (so the guard is bypassed).
-    // Simpler: just clear the DB manually and then scan an empty folder.
-    fs.unlinkSync(dbPath);
-    // Recreate the stale file directly (bypassing scanLogs guard)
-    fs.writeFileSync(dbPath, 'stale');
-    // scanLogs returns early when DB exists; to test cleanup we use _clearDbFile directly
     logService._clearDbFile(dbPath, testFolder);
     try {
       expect(fs.existsSync(dbPath)).toBe(false);
@@ -249,15 +241,12 @@ describe('scanLogs() return structure', () => {
   });
 
   test('DB file is removed when NEUF-*.log files exist but parse 0 entries (stale DB cleanup)', async () => {
-    const testFolder = path.join(TEST_DIR, 'stale-db-bad-format-jest-' + Date.now());
+    const testFolder = path.join(TEST_DIR, 'stale-db-bad-format-' + Date.now());
     const dbDir = path.join(testFolder, 'log-filter-db');
     const dbPath = path.join(dbDir, 'neuf-logs.db');
-    // Place a NEUF log file with invalid content AND a pre-existing stale DB
+    // Place a NEUF log file with invalid content; no DB file present so scanLogs runs through
     fs.mkdirSync(dbDir, { recursive: true });
     fs.writeFileSync(path.join(testFolder, 'NEUF-test.log'), 'not a valid log line\n');
-    fs.writeFileSync(dbPath, 'stale');
-    // scanLogs returns early for existing DB; delete it so the scan runs through to totalLogs=0 path
-    fs.unlinkSync(dbPath);
     try {
       await expect(logService.scanLogs(testFolder))
         .rejects.toThrow(/could not parse/);
