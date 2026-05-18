@@ -48,11 +48,12 @@
     $('#timeBucketCheckboxes').on('change', '.timeBucket-checkbox', function() {
       if (!$(this).is(':checked')) return;
       const bucketLabel = $(this).val();
+      const bucketWithSeconds = normalizeTimeFilterInput(bucketLabel);
       if (!$('#timeFromFilter').val().trim()) {
-        $('#timeFromFilter').val(bucketLabel);
+        $('#timeFromFilter').val(bucketWithSeconds);
       }
       if (!$('#timeToFilter').val().trim()) {
-        $('#timeToFilter').val(addOneHour(bucketLabel));
+        $('#timeToFilter').val(addOneHour(bucketWithSeconds));
       }
     });
 
@@ -122,7 +123,7 @@
         showStatus('❌ Failed to export logs: ' + error.message, 'error');
       })
       .finally(function() {
-        exportButton.prop('disabled', false).text('📤 Export Logs');
+        exportButton.prop('disabled', false).text(' Export Logs');
       });
   }
 
@@ -313,8 +314,8 @@
     state.currentPage = 1;
     
     // Build filters object
-    const timeFromValue = $('#timeFromFilter').val().trim();
-    const timeToValue = $('#timeToFilter').val().trim();
+    const timeFromValue = normalizeTimeFilterInput($('#timeFromFilter').val());
+    const timeToValue = normalizeTimeFilterInput($('#timeToFilter').val());
     const filenameIncludeValues = getSelectedValues('filenameInclude');
     const filenameExcludeValues = getSelectedValues('filenameExclude');
     const logLevelIncludeValues = getSelectedValues('logLevelInclude');
@@ -599,20 +600,39 @@
 
 
   /**
-   * Add 1 hour to a date string in "YYYY.MM.DD HH:mm" format.
+   * Normalize time filter input to second precision.
+   * Accepts both "YYYY.MM.DD HH:mm" and "YYYY.MM.DD HH:mm:ss".
+   * @param {string} value
+   * @returns {string}
+   */
+  function normalizeTimeFilterInput(value) {
+    const raw = (value || '').trim();
+    if (!raw) return '';
+
+    const minuteMatch = raw.match(/^(\d{4}\.\d{2}\.\d{2} \d{2}:\d{2})$/);
+    if (minuteMatch) {
+      return minuteMatch[1] + ':00';
+    }
+
+    return raw;
+  }
+
+  /**
+   * Add 1 hour to a date string in "YYYY.MM.DD HH:mm:ss" format.
    * @param {string} dateStr
    * @returns {string}
    */
   function addOneHour(dateStr) {
-    const match = dateStr.match(/^(\d{4})\.(\d{2})\.(\d{2}) (\d{2}):(\d{2})$/);
+    const normalizedDateStr = normalizeTimeFilterInput(dateStr);
+    const match = normalizedDateStr.match(/^(\d{4})\.(\d{2})\.(\d{2}) (\d{2}):(\d{2}):(\d{2})$/);
     if (!match) return dateStr;
     const d = new Date(
       parseInt(match[1]), parseInt(match[2]) - 1, parseInt(match[3]),
-      parseInt(match[4]), parseInt(match[5])
+      parseInt(match[4]), parseInt(match[5]), parseInt(match[6])
     );
     d.setHours(d.getHours() + 1);
     const pad = function(n) { return String(n).padStart(2, '0'); };
-    return d.getFullYear() + '.' + pad(d.getMonth() + 1) + '.' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+    return d.getFullYear() + '.' + pad(d.getMonth() + 1) + '.' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
   }
 
 })();

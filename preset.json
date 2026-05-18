@@ -1,4 +1,26 @@
 {
+  "scan_all": {
+    "id": "scan_all",
+    "label": "🔍 Scan components",
+    "description": "Show only logs from scan components",
+    "filters": { "componentInclude": ["%scan%", "%autostore%", "%TransactionJob%", "%Equitrac%", "FunctionAccessControlProvider"] }
+  },
+  "print_all": {
+    "id": "print_all",
+    "label": "🔍 Print components",
+    "description": "Show only logs from Print components",
+    "filters": { "componentInclude": ["%print%", "%autostore%", "%TransactionJob%", "%Equitrac%", "FunctionAccessControlProvider"] }
+  },
+  "event_processing": {
+    "id": "event_processing",
+    "label": "🔍 Event processing components",
+    "description": "Show only logs from event processing components",
+    "filters": {
+      "search": "Received",
+      "contextLines": 5,
+      "strictContext": true
+    }
+  },
   "exclude_noisy_components": {
     "id": "exclude_noisy_components",
     "label": "🚫 Exclude Noisy components",

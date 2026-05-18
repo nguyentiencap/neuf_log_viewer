@@ -84,6 +84,9 @@ const logService = new NEUFLogService(console.log);
  * @returns {Object} Parsed and normalized filters
  */
 function parseFiltersFromRequest(query) {
+  const hasContextLines = Object.prototype.hasOwnProperty.call(query, 'contextLines');
+  const hasStrictContext = Object.prototype.hasOwnProperty.call(query, 'strictContext');
+
   const filters = {
     // Include filters
     filenameInclude: query.filenameInclude || [],
@@ -103,8 +106,8 @@ function parseFiltersFromRequest(query) {
     timeFrom: query.timeFrom || null,
     timeTo: query.timeTo || null,
     search: query.search || '',
-    contextLines: parseInt(query.contextLines) || 0,
-    strictContext: query.strictContext === true || query.strictContext === 'true',
+    contextLines: hasContextLines ? (parseInt(query.contextLines, 10) || 0) : undefined,
+    strictContext: hasStrictContext ? (query.strictContext === true || query.strictContext === 'true') : undefined,
     preset: query.preset || ''
   };
   
