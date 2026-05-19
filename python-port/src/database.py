@@ -1,89 +1,98 @@
 """
-Database Module (Python port skeleton of src/database.js)
+Database Module (Python port of src/database.js)
 Handles all database operations including wrapper, queries, and data retrieval.
 Responsibility: Database abstraction and all SQL operations.
-Note: Python uses the built-in sqlite3 module instead of sql.js (JS WASM SQLite).
+Note: Uses Python's built-in sqlite3 module instead of sql.js.
 """
 
+import re
+import sqlite3
+
 from .log_parser import log_parser_service
+
+
+class _Statement:
+    """
+    Statement-like wrapper returned by DatabaseWrapper.prepare().
+    Mirrors the interface produced by the JS DatabaseWrapper.prepare() shim.
+    """
+
+    def __init__(self, conn, sql):
+        self._conn = conn
+        self._sql = sql
+
+    def run(self, *params):
+        self._conn.execute(self._sql, params)
+
+    def get(self, *params):
+        self._conn.row_factory = sqlite3.Row
+        cur = self._conn.execute(self._sql, params)
+        row = cur.fetchone()
+        if row is None:
+            return None
+        return dict(row)
+
+    def all(self, *params):
+        self._conn.row_factory = sqlite3.Row
+        cur = self._conn.execute(self._sql, params)
+        return [dict(r) for r in cur.fetchall()]
+
+    def each(self, callback, *params):
+        self._conn.row_factory = sqlite3.Row
+        cur = self._conn.execute(self._sql, params)
+        for row in cur:
+            callback(dict(row))
 
 
 class DatabaseWrapper:
     """
     Database Wrapper Class.
-    Provides a uniform wrapper around a sqlite3.Connection for easier operations.
-    Mirrors the JavaScript DatabaseWrapper API from src/database.js.
+    Wraps a sqlite3.Connection to mirror the JavaScript DatabaseWrapper API.
     """
 
     def __init__(self, db):
         """
-        Store raw sqlite3.Connection handle.
-
-        @param db: sqlite3.Connection — equivalent to SQL.js Database in JS
-        (JS: constructor)
+        @param db: sqlite3.Connection
         """
         self.db = db
+        self.db.row_factory = sqlite3.Row
 
     def exec(self, sql):
-        """
-        Execute one or more SQL statements without returning rows.
-
-        @param sql: SQL string (may contain multiple semicolon-separated statements)
-        (JS: exec → db.run)
-        """
-        raise NotImplementedError("TODO: implement exec")
+        """Execute one or more semicolon-separated SQL statements."""
+        self.db.executescript(sql)
 
     def prepare(self, sql):
-        """
-        Return a statement-like object with run / get / all / each methods.
-
-        The returned object must support:
-          .run(*params)              → execute and return None
-          .get(*params)             → return first row as dict or None
-          .all(*params)             → return all rows as list[dict]
-          .each(callback, *params)  → call callback(row_dict) for each row
-
-        @param sql: SQL string with ? placeholders
-        @returns: Statement-like object
-        (JS: prepare)
-        """
-        raise NotImplementedError("TODO: implement prepare")
+        """Return a statement-like object with run / get / all / each methods."""
+        return _Statement(self.db, sql)
 
     def transaction(self, fn):
         """
-        Wrap a function in a BEGIN / COMMIT / ROLLBACK transaction.
-        Returns a callable that accepts one argument (items) and passes it to fn.
-
-        Usage:
-          batch_insert = db.transaction(insert_fn)
-          batch_insert(rows)   # runs insert_fn(rows) inside a transaction
-
-        @param fn: Callable(items) to execute inside the transaction
-        @returns: Callable that runs fn(items) inside a transaction
-        (JS: transaction)
+        Wrap a function in a transaction.
+        Returns callable(items) that runs fn(items) inside BEGIN/COMMIT.
         """
-        raise NotImplementedError("TODO: implement transaction")
+        def run(items):
+            with self.db:   # sqlite3 context manager handles BEGIN/COMMIT/ROLLBACK
+                fn(items)
+        return run
 
     def register_function(self, name, fn):
-        """
-        Register a custom SQL scalar function on the connection.
-
-        @param name: SQL function name (e.g. 'REGEXP', 'BUCKET_LABEL')
-        @param fn: Python callable implementing the function
-        (JS: registerFunction → db.create_function)
-        """
-        raise NotImplementedError("TODO: implement register_function")
+        """Register a custom SQL scalar function."""
+        # Determine arity from function signature
+        import inspect
+        try:
+            sig = inspect.signature(fn)
+            narg = len(sig.parameters)
+        except (ValueError, TypeError):
+            narg = -1
+        self.db.create_function(name, narg, fn)
 
     def export(self):
-        """
-        Export the database content as bytes for file persistence.
-        In Python, equivalent to reading the serialized SQLite file (e.g. via
-        connection.iterdump or backup to an in-memory BytesIO buffer).
-
-        @returns: bytes representing the database file
-        (JS: export → sql.js db.export())
-        """
-        raise NotImplementedError("TODO: implement export")
+        """Export database content as bytes."""
+        import io
+        buf = io.BytesIO()
+        for chunk in self.db.iterdump():
+            buf.write((chunk + '\n').encode())
+        return buf.getvalue()
 
 
 class DatabaseService:
@@ -95,163 +104,371 @@ class DatabaseService:
 
     def __init__(self, db, logger=print):
         """
-        Inject database wrapper and optional logger callback.
-
         @param db: DatabaseWrapper instance
-        @param logger: Callable logger (default: print)
-        (JS: constructor)
+        @param logger: Callable logger
         """
         self.db = db
         self.logger = logger
 
+    # ------------------------------------------------------------------ #
+    #  WHERE clause builder                                                 #
+    # ------------------------------------------------------------------ #
+
     def build_where_clause(self, filters, exclude_field=None):
         """
         Build SQL WHERE clause string and parameter list from a filters dict.
-        Supports include/exclude lists, LIKE patterns (values containing %),
-        NULL membership, time range, and free-text search.
-
-        Supported filter keys:
-          filenameInclude, filenameExclude,
-          logLevelInclude, logLevelExclude,
-          threadInclude, threadExclude,
-          deviceInclude, deviceExclude,
-          componentInclude, componentExclude,
-          timeFrom (str "YYYY.MM.DD HH:mm:ss" or unix int),
-          timeTo   (str "YYYY.MM.DD HH:mm:ss" or unix int),
-          search   (str — LIKE + REGEXP match against message column)
 
         @param filters: Dict of filter key -> value/list
-        @param exclude_field: Field name to omit from WHERE (used when fetching options)
+        @param exclude_field: Field name to skip (used when fetching options)
         @returns: Dict { 'where': str, 'params': list }
-        (JS: buildWhereClause)
         """
-        raise NotImplementedError("TODO: implement build_where_clause")
+        where = 'WHERE 1=1'
+        params = []
+
+        filename_include  = filters.get('filenameInclude', [])
+        filename_exclude  = filters.get('filenameExclude', [])
+        log_level_include = filters.get('logLevelInclude', [])
+        log_level_exclude = filters.get('logLevelExclude', [])
+        thread_include    = filters.get('threadInclude', [])
+        thread_exclude    = filters.get('threadExclude', [])
+        device_include    = filters.get('deviceInclude', [])
+        device_exclude    = filters.get('deviceExclude', [])
+        component_include = filters.get('componentInclude', [])
+        component_exclude = filters.get('componentExclude', [])
+
+        def is_like(v):
+            return isinstance(v, str) and '%' in v
+
+        def add_filter(field, db_col, inc_list, exc_list):
+            nonlocal where
+            if exclude_field == field:
+                return
+
+            # ---- include ----
+            if inc_list:
+                include_nulls = None in inc_list
+                non_null_inc = [v for v in inc_list if v is not None]
+                like_inc  = [v for v in non_null_inc if is_like(v)]
+                exact_inc = [v for v in non_null_inc if not is_like(v)]
+
+                parts = []
+                if exact_inc:
+                    placeholders = ','.join(['?' for _ in exact_inc])
+                    parts.append(f'{db_col} IN ({placeholders})')
+                    params.extend(exact_inc)
+                for pat in like_inc:
+                    parts.append(f'{db_col} LIKE ?')
+                    params.append(pat)
+                if include_nulls:
+                    parts.append(f'{db_col} IS NULL')
+                if parts:
+                    where += f' AND ({" OR ".join(parts)})'
+
+            # ---- exclude ----
+            if exc_list:
+                exclude_nulls = None in exc_list
+                non_null_exc = [v for v in exc_list if v is not None]
+                like_exc  = [v for v in non_null_exc if is_like(v)]
+                exact_exc = [v for v in non_null_exc if not is_like(v)]
+
+                if exact_exc and exclude_nulls:
+                    placeholders = ','.join(['?' for _ in exact_exc])
+                    where += (f' AND ({db_col} NOT IN ({placeholders})'
+                              f' AND {db_col} IS NOT NULL)')
+                    params.extend(exact_exc)
+                elif exact_exc:
+                    placeholders = ','.join(['?' for _ in exact_exc])
+                    where += f' AND {db_col} NOT IN ({placeholders})'
+                    params.extend(exact_exc)
+                elif exclude_nulls:
+                    where += f' AND {db_col} IS NOT NULL'
+
+                if like_exc:
+                    if len(like_exc) == 1:
+                        if exclude_nulls:
+                            where += f' AND {db_col} NOT LIKE ?'
+                        else:
+                            where += f' AND ({db_col} NOT LIKE ? OR {db_col} IS NULL)'
+                        params.append(like_exc[0])
+                    else:
+                        not_like_parts = ' AND '.join(f'{db_col} NOT LIKE ?' for _ in like_exc)
+                        if exclude_nulls:
+                            where += f' AND ({not_like_parts})'
+                        else:
+                            where += f' AND ({db_col} IS NULL OR ({not_like_parts}))'
+                        params.extend(like_exc)
+
+        add_filter('filename',  'filename',       filename_include,  filename_exclude)
+        add_filter('logLevel',  'log_level',      log_level_include, log_level_exclude)
+        add_filter('thread',    'thread_name',    thread_include,    thread_exclude)
+        add_filter('device',    'device_id',      device_include,    device_exclude)
+        add_filter('component', 'component_name', component_include, component_exclude)
+
+        # Time range
+        if filters.get('timeFrom') is not None or filters.get('timeTo') is not None:
+            time_from_unix = 0
+            time_to_unix   = 2147483647
+
+            if filters.get('timeFrom') is not None:
+                tf = filters['timeFrom']
+                if isinstance(tf, str):
+                    tf = log_parser_service.get_time_bucket(tf)
+                time_from_unix = tf if tf is not None else 0
+
+            if filters.get('timeTo') is not None:
+                tt = filters['timeTo']
+                if isinstance(tt, str):
+                    tt = log_parser_service.get_time_bucket(tt)
+                time_to_unix = tt if tt is not None else 2147483647
+
+            where += ' AND time_bucket BETWEEN ? AND ?'
+            params.extend([time_from_unix, time_to_unix])
+
+        # Search text: LIKE + REGEXP
+        if filters.get('search'):
+            if filters.get('searchRegex'):
+                where += ' AND REGEXP(?, message)'
+                params.append(filters['search'])
+            else:
+                where += ' AND (message LIKE ? OR REGEXP(?, message))'
+                params.extend([f"%{filters['search']}%", filters['search']])
+
+        return {'where': where, 'params': params}
+
+    # ------------------------------------------------------------------ #
+    #  Custom SQL functions                                                 #
+    # ------------------------------------------------------------------ #
 
     def register_custom_functions(self):
-        """
-        Register custom SQL scalar functions on the database connection.
-        Must be called after every new database connection (scan and load paths).
+        """Register REGEXP and BUCKET_LABEL custom SQL functions."""
+        import datetime
 
-        Functions registered:
-          REGEXP(pattern, value) → 1 if value matches pattern (case-insensitive), else 0
-          BUCKET_LABEL(unix_ts)  → "YYYY.MM.DD HH:00" string for the given Unix second
-        (JS: registerCustomFunctions)
-        """
-        raise NotImplementedError("TODO: implement register_custom_functions")
+        def regexp_fn(pattern, value):
+            if value is None:
+                return 0
+            try:
+                return 1 if re.search(pattern, value, re.IGNORECASE) else 0
+            except re.error:
+                return 0
+
+        def bucket_label_fn(unix_ts):
+            if unix_ts is None:
+                return None
+            d = datetime.datetime.utcfromtimestamp(unix_ts)
+            return f'{d.year:04d}.{d.month:02d}.{d.day:02d} {d.hour:02d}:00'
+
+        self.db.register_function('REGEXP', regexp_fn)
+        self.db.register_function('BUCKET_LABEL', bucket_label_fn)
+
+    # ------------------------------------------------------------------ #
+    #  Schema management                                                    #
+    # ------------------------------------------------------------------ #
 
     def init_database(self):
-        """
-        Create the logs table and all indexes if they do not already exist.
+        """Create logs table and indexes."""
+        self.register_custom_functions()
+        self.db.exec("""
+            CREATE TABLE IF NOT EXISTS logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                filename TEXT NOT NULL,
+                timestamp TEXT NOT NULL,
+                thread_name TEXT NOT NULL,
+                device_id TEXT,
+                component_name TEXT,
+                log_level TEXT,
+                time_bucket INTEGER,
+                message TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_filename ON logs(filename);
+            CREATE INDEX IF NOT EXISTS idx_timestamp ON logs(timestamp);
+            CREATE INDEX IF NOT EXISTS idx_thread_name ON logs(thread_name);
+            CREATE INDEX IF NOT EXISTS idx_device_id ON logs(device_id);
+            CREATE INDEX IF NOT EXISTS idx_component_name ON logs(component_name);
+            CREATE INDEX IF NOT EXISTS idx_log_level ON logs(log_level);
+            CREATE INDEX IF NOT EXISTS idx_time_bucket ON logs(time_bucket);
+        """)
 
-        Schema:
-          logs(id INTEGER PK AUTOINCREMENT, filename TEXT, timestamp TEXT,
-               thread_name TEXT, device_id TEXT, component_name TEXT,
-               log_level TEXT, time_bucket INTEGER, message TEXT)
-        Indexes on: filename, timestamp, thread_name, device_id,
-                    component_name, log_level, time_bucket.
-        (JS: initDatabase)
-        """
-        raise NotImplementedError("TODO: implement init_database")
+    # ------------------------------------------------------------------ #
+    #  Filter options                                                       #
+    # ------------------------------------------------------------------ #
 
-    def get_filter_options(self, table_name="logs", limited_options=True):
-        """
-        Return grouped distinct values with counts for each filter field.
+    def get_filter_options(self, table_name='logs', limited_options=True):
+        """Return grouped distinct values with counts for each filter field."""
 
-        When limited_options=True, threads and components are limited to top 20.
+        def get_opts(column, order_by, limit=None):
+            limit_clause = f' LIMIT {limit}' if limit else ''
+            sql = (f'SELECT {column}, COUNT(*) as count FROM {table_name}'
+                   f' GROUP BY {column} ORDER BY {order_by}{limit_clause}')
+            return self.db.prepare(sql).all()
 
-        @param table_name: Source table (default 'logs' or a pre-filtered temp table)
-        @param limited_options: Limit thread_name and components to top 20 (default True)
-        @returns: Dict {
-                    'filenames':   [{'filename': str, 'count': int}, ...],
-                    'timeBuckets': [{'time_label': str, 'count': int}, ...],
-                    'logLevels':   [{'log_level': str, 'count': int}, ...],
-                    'threads':     [{'thread_name': str, 'count': int}, ...],
-                    'devices':     [{'device_id': str, 'count': int}, ...],
-                    'components':  [{'component_name': str, 'count': int}, ...],
-                    'totalLogs':   int
-                  }
-        (JS: getFilterOptions)
-        """
-        raise NotImplementedError("TODO: implement get_filter_options")
+        total_row = self.db.prepare(f'SELECT COUNT(*) as total FROM {table_name}').get()
+        total_logs = total_row['total'] if total_row else 0
+
+        def get_time_buckets():
+            sql = f"""
+                SELECT BUCKET_LABEL(time_bucket) as time_label, COUNT(*) as count
+                FROM {table_name}
+                WHERE time_bucket IS NOT NULL
+                GROUP BY BUCKET_LABEL(time_bucket)
+                ORDER BY time_label ASC
+                LIMIT 100
+            """
+            return self.db.prepare(sql).all()
+
+        thread_limit    = 20 if limited_options else None
+        component_limit = 20 if limited_options else None
+
+        return {
+            'filenames':   get_opts('filename',       'filename ASC'),
+            'timeBuckets': get_time_buckets(),
+            'logLevels':   get_opts('log_level',      'log_level ASC'),
+            'threads':     get_opts('thread_name',    'count DESC', thread_limit),
+            'devices':     get_opts('device_id',      'count DESC'),
+            'components':  get_opts('component_name', 'count DESC', component_limit),
+            'totalLogs':   total_logs,
+        }
+
+    # ------------------------------------------------------------------ #
+    #  Temp table for scan pipeline                                         #
+    # ------------------------------------------------------------------ #
 
     def init_temp_logs_table(self):
-        """
-        Create the temporary staging table temp_parsed_logs used during scan.
-        Same columns as logs table but without auto-increment id.
-        (JS: initTempLogsTable)
-        """
-        raise NotImplementedError("TODO: implement init_temp_logs_table")
+        self.db.exec("""
+            CREATE TABLE IF NOT EXISTS temp_parsed_logs (
+                filename TEXT NOT NULL,
+                timestamp TEXT NOT NULL,
+                thread_name TEXT NOT NULL,
+                device_id TEXT,
+                component_name TEXT,
+                log_level TEXT,
+                time_bucket INTEGER,
+                message TEXT NOT NULL
+            )
+        """)
 
     def prepare_insert_temp(self):
-        """
-        Prepare the INSERT statement for temp_parsed_logs table.
-
-        @returns: Statement object (result of DatabaseWrapper.prepare())
-        (JS: prepareInsertTemp)
-        """
-        raise NotImplementedError("TODO: implement prepare_insert_temp")
+        return self.db.prepare("""
+            INSERT INTO temp_parsed_logs
+                (filename, timestamp, thread_name, device_id, component_name,
+                 log_level, time_bucket, message)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """)
 
     def create_batch_insert_temp(self, insert_stmt):
-        """
-        Create a batch-insert transaction callable for temp_parsed_logs.
-
-        @param insert_stmt: Prepared statement from prepare_insert_temp()
-        @returns: Callable(logs: list[dict]) that inserts all rows in one transaction.
-                  Each dict must have: filename, timestamp, threadName, deviceId,
-                  componentName, logLevel, timeBucket, message
-        (JS: createBatchInsertTemp)
-        """
-        raise NotImplementedError("TODO: implement create_batch_insert_temp")
+        def insert_many(logs):
+            for log in logs:
+                insert_stmt.run(
+                    log['filename'], log['timestamp'], log['threadName'],
+                    log.get('deviceId'), log.get('componentName'),
+                    log.get('logLevel'), log.get('timeBucket'), log['message']
+                )
+        return self.db.transaction(insert_many)
 
     def insert_from_temp_to_logs(self):
-        """
-        Copy all rows from temp_parsed_logs into logs table, ordered by timestamp ASC.
-        Delegates sorting to SQLite for efficiency.
-        (JS: insertFromTempToLogs)
-        """
-        raise NotImplementedError("TODO: implement insert_from_temp_to_logs")
+        self.db.exec("""
+            INSERT INTO logs
+                (filename, timestamp, thread_name, device_id, component_name,
+                 log_level, time_bucket, message)
+            SELECT filename, timestamp, thread_name, device_id, component_name,
+                   log_level, time_bucket, message
+            FROM temp_parsed_logs
+            ORDER BY timestamp ASC
+        """)
 
     def drop_temp_logs_table(self):
-        """
-        Drop the temporary staging table temp_parsed_logs after scan is complete.
-        (JS: dropTempLogsTable)
-        """
-        raise NotImplementedError("TODO: implement drop_temp_logs_table")
+        self.db.exec('DROP TABLE IF EXISTS temp_parsed_logs')
+
+    # ------------------------------------------------------------------ #
+    #  Filter pipeline                                                      #
+    # ------------------------------------------------------------------ #
 
     def execute_filter_step(self, filters, input_table, output_table):
         """
-        Materialize filtered rows from input_table into output_table (one pipeline step).
+        Materialize filtered rows from input_table into output_table.
 
-        Steps:
-          1. Drop and recreate output_table as TEMP table with same schema as logs.
-          2. INSERT rows matching the full WHERE clause (all filters including search).
-          3. If contextLines > 0: also INSERT surrounding context rows from input_table.
-
-        @param filters: Dict of filter parameters (same shape as build_where_clause)
-        @param input_table: Source table name (e.g. 'logs' or 'filter_step_1')
-        @param output_table: Destination temp table name (e.g. 'filter_step_1')
-        @returns: Dict { 'count': int } — row count in output_table after the step
-        (JS: executeFilterStep)
+        @param filters: Dict of filter parameters
+        @param input_table: Source table name
+        @param output_table: Destination temp table name
+        @returns: Dict { 'count': int }
         """
-        raise NotImplementedError("TODO: implement execute_filter_step")
+        conn = self.db.db
+
+        if input_table != output_table:
+            conn.execute(f'DROP TABLE IF EXISTS {output_table}')
+            conn.execute(f"""
+                CREATE TEMP TABLE {output_table} (
+                    id INTEGER PRIMARY KEY,
+                    filename TEXT NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    thread_name TEXT NOT NULL,
+                    device_id TEXT,
+                    component_name TEXT,
+                    log_level TEXT,
+                    time_bucket INTEGER,
+                    message TEXT NOT NULL
+                )
+            """)
+
+            # Step 1: insert matching rows (all filters including search)
+            clause = self.build_where_clause(filters)
+            sql = (f'INSERT INTO {output_table} SELECT * FROM {input_table} '
+                   f'{clause["where"]} ORDER BY timestamp ASC')
+            self.logger(sql)
+            conn.execute(sql, clause['params'])
+
+            # Step 2: context lines expansion
+            if filters.get('search') and (filters.get('contextLines') or 0) > 0:
+                context_lines = filters['contextLines']
+
+                # Context rows matching all non-search filters, within ±N of any match
+                no_search_clause = self.build_where_clause({**filters, 'search': None})
+                conn.execute(f"""
+                    INSERT OR IGNORE INTO {output_table}
+                    SELECT * FROM {input_table} i
+                    {no_search_clause['where']}
+                    AND EXISTS (
+                        SELECT 1 FROM {output_table} m
+                        WHERE i.id BETWEEN m.id - ? AND m.id + ?
+                    )
+                """, no_search_clause['params'] + [context_lines, context_lines])
+
+                # Step 3: any rows within ±N of current output (pure proximity, no filter)
+                if not filters.get('strictContext'):
+                    conn.execute(f"""
+                        INSERT OR IGNORE INTO {output_table}
+                        SELECT * FROM {input_table} i
+                        WHERE EXISTS (
+                            SELECT 1 FROM {output_table} m
+                            WHERE i.id BETWEEN m.id - ? AND m.id + ?
+                        )
+                    """, [context_lines, context_lines])
+
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            f'SELECT COUNT(*) as count FROM {output_table}'
+        ).fetchone()
+        count = row['count'] if row else 0
+        self.logger(f'executeFilterStep completed: {count} rows in {output_table}')
+        return {'count': count}
+
+    # ------------------------------------------------------------------ #
+    #  Batch insert for main logs table                                     #
+    # ------------------------------------------------------------------ #
 
     def prepare_insert(self):
-        """
-        Prepare the INSERT statement for the logs table (used in batch operations).
-
-        @returns: Statement object (result of DatabaseWrapper.prepare())
-        (JS: prepareInsert)
-        """
-        raise NotImplementedError("TODO: implement prepare_insert")
+        return self.db.prepare("""
+            INSERT INTO logs
+                (filename, timestamp, thread_name, device_id, component_name,
+                 log_level, time_bucket, message)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """)
 
     def create_batch_insert(self, insert_stmt):
-        """
-        Create a batch-insert transaction callable for the logs table.
-
-        @param insert_stmt: Prepared statement from prepare_insert()
-        @returns: Callable(logs: list[dict]) that inserts all rows in one transaction.
-                  Each dict must have: filename, timestamp, threadName, deviceId,
-                  componentName, logLevel, timeBucket, message
-        (JS: createBatchInsert)
-        """
-        raise NotImplementedError("TODO: implement create_batch_insert")
+        def insert_many(logs):
+            for log in logs:
+                insert_stmt.run(
+                    log['filename'], log['timestamp'], log['threadName'],
+                    log.get('deviceId'), log.get('componentName'),
+                    log.get('logLevel'), log.get('timeBucket'), log['message']
+                )
+        return self.db.transaction(insert_many)
