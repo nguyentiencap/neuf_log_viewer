@@ -5,7 +5,7 @@ class PresetService:
     """Skeleton preset utility class using static methods like JavaScript version."""
 
     @staticmethod
-    def get_presets_path(db_dir):
+    def get_presets_path(filter_db_dir):
         """Build path to scan snapshot preset file (JS: getPresetsPath)."""
         raise NotImplementedError("TODO: implement get_presets_path")
 
@@ -30,7 +30,7 @@ class PresetService:
         raise NotImplementedError("TODO: implement save_preset")
 
     @staticmethod
-    def load_preset(db_dir, logger=print):
+    def load_preset(filter_db_dir, logger=print):
         """Merge user presets with snapshot presets (JS: loadPreset)."""
         raise NotImplementedError("TODO: implement load_preset")
 
