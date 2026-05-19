@@ -84,16 +84,12 @@ describe('isDatabaseScanned()', () => {
 // ============================================================================
 describe('_createDatabaseService()', () => {
   test('Returns db and databaseService objects', () => {
-    const mockSqlDb = {
-      run: () => {},
-      exec: () => [],
-      prepare: () => ({ get: () => null, all: () => [], run: () => {} }),
-      export: () => new Uint8Array(),
-      create_function: () => {}
-    };
-    const result = logService._createDatabaseService(mockSqlDb);
+    const Database = require('better-sqlite3');
+    const betterSqliteDb = new Database(':memory:');
+    const result = logService._createDatabaseService(betterSqliteDb);
     expect(result.db).toBeDefined();
     expect(result.databaseService).toBeDefined();
+    betterSqliteDb.close();
   });
 });
 // ============================================================================
@@ -110,24 +106,6 @@ describe('clearDatabase()', () => {
     const result = logService.clearDatabase('/absolutely/non/existent/path/12345');
     expect(result.success).toBe(true);
     expect(result.message).toBeDefined();
-  });
-});
-// ============================================================================
-// SQL.js initialization
-// ============================================================================
-describe('SQL.js initialization', () => {
-  test('initializeSqlJs: Returns SQL.js instance', async () => {
-    const SQL = await NEUFLogService.initializeSqlJs();
-    expect(typeof SQL.Database).toBe('function');
-  });
-  test('getSQL: Returns same SQL.js instance (singleton)', async () => {
-    const SQL1 = await logService.getSQL();
-    const SQL2 = await logService.getSQL();
-    expect(SQL1).toBe(SQL2);
-  });
-  test('initialize: Delegates to static initializeSqlJs', async () => {
-    const result = await logService.initialize();
-    expect(typeof result.Database).toBe('function');
   });
 });
 // ============================================================================
