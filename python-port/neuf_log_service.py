@@ -1,6 +1,6 @@
 """Python skeleton port of src/neuf-log-service.js for test scaffolding only."""
 
-from log_parser import log_parser_service
+from log_parser import default_log_parser_service
 from log_file_scanner import LogFileScannerService
 
 
@@ -13,9 +13,9 @@ class NEUFLogService:
 
     def __init__(self, logger=print):
         """Inject logger and initialize parser/scanner dependencies (JS: constructor)."""
-        self.parser_service = log_parser_service
+        self.parser_service = default_log_parser_service
         self.logger = logger
-        self.scanner_service = LogFileScannerService(log_parser_service, logger)
+        self.scanner_service = LogFileScannerService(default_log_parser_service, logger)
 
     async def initialize(self):
         """Backward-compatible SQL init wrapper (JS: initialize)."""

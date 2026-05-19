@@ -30,4 +30,5 @@ class LogParserService:
 
 
 # Singleton placeholder matching src/log-parser.js export pattern.
-log_parser_service = LogParserService()
+default_log_parser_service = LogParserService()
+log_parser_service = default_log_parser_service
