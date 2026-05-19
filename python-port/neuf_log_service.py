@@ -7,6 +7,7 @@ from log_file_scanner import LogFileScannerService
 class NEUFLogService:
     """Skeleton core service orchestrating scan, filter, and preset operations."""
 
+    # Shared caches intentionally mirror JS static fields on the service class.
     _sql = None
     _db_cache = {}
     _preset_cache = {}
