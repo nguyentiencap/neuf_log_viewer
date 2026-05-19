@@ -41,3 +41,4 @@ build/
 # Python
 __pycache__/
 *.pyc
+python-port/test/test-logs/
