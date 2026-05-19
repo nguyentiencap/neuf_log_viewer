@@ -12,7 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.database import DatabaseWrapper, DatabaseService
-from src.log_parser import log_parser_service
+from src.log_parser import LogParserService, log_parser_service
 
 
 def utc_ts(year, month, day, hour, minute, second):

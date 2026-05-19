@@ -14,7 +14,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.neuf_log_service import NEUFLogService
 
-TEST_DIR = os.path.join(os.path.dirname(__file__), 'test-logs')
 mock_logger = lambda *_: None
 log_service = NEUFLogService(mock_logger)
 
