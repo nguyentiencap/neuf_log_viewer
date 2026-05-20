@@ -37,3 +37,8 @@ desktop.ini
 # Build output
 dist/
 build/
+
+# Python
+__pycache__/
+*.pyc
+python-port/test/test-logs/
