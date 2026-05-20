@@ -10,7 +10,14 @@ cd /d "%~dp0"
 
 echo [1/5] Installing required Python packages...
 python -m pip install --upgrade pip >nul
-python -m pip install pyinstaller fastapi uvicorn pydantic starlette anyio httpx
+python -m pip install ^
+  pyinstaller==6.13.0 ^
+  fastapi==0.136.1 ^
+  uvicorn==0.47.0 ^
+  pydantic==2.13.4 ^
+  starlette==1.0.0 ^
+  anyio==4.13.0 ^
+  httpx==0.28.1
 if errorlevel 1 (
   echo Failed to install build dependencies.
   exit /b 1
@@ -48,13 +55,12 @@ if errorlevel 1 (
 )
 
 echo [5/5] Copying runtime assets...
-copy /Y "..\preset.json" "dist\preset.json" >nul
 copy /Y "..\USERGUIDE.md" "dist\USERGUIDE.md" >nul
 
 echo.
 echo Build complete.
 echo - CLI: dist\neuf-log-viewer-cli.exe
 echo - API: dist\neuf-log-viewer-api.exe
-echo - Assets: dist\preset.json, dist\USERGUIDE.md
+echo - Asset: dist\USERGUIDE.md
 
 endlocal
