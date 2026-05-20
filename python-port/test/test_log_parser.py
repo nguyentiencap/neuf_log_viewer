@@ -1,7 +1,6 @@
 """
 Test Suite for Log Parser Module (Python port of test/log-parser.test.js)
 Tests all methods of LogParserService.
-All tests are intentionally failing at this stage — the skeleton raises NotImplementedError.
 """
 import sys
 import calendar

@@ -1,7 +1,6 @@
 """
 Test Suite for Database Filter Module (Python port of test/database-filter.test.js)
 Tests DatabaseService.execute_filter_step() with an in-memory SQLite database.
-All tests are intentionally failing at this stage — the skeleton raises NotImplementedError.
 """
 import sys
 import sqlite3

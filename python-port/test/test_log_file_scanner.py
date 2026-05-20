@@ -1,7 +1,6 @@
 """
 Test Suite for Log File Scanner Module (Python port, mirroring test/log-file-scanner pattern)
 Tests all methods of LogFileScannerService.
-All tests are intentionally failing at this stage — the skeleton raises NotImplementedError.
 """
 import sys
 import os

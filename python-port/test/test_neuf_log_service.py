@@ -1,7 +1,6 @@
 """
 Test Suite for NEUF Log Service Module (Python port of test/neuf-log-service.test.js)
 Tests all methods of NEUFLogService.
-All tests are intentionally failing at this stage — the skeleton raises NotImplementedError.
 """
 import sys
 import os

@@ -26,7 +26,6 @@ class NEUFLogService:
     # Shared caches mirror JS static fields
     _sql = None          # not actually needed; Python uses sqlite3 natively
     _db_cache = {}
-    _preset_cache = {}
 
     def __init__(self, logger=print):
         self.parser_service  = default_log_parser_service
@@ -73,7 +72,6 @@ class NEUFLogService:
     def _invalidate_folder_caches(self, folder_path):
         resolved = self._get_resolved_path(folder_path)
         NEUFLogService._db_cache.pop(resolved, None)
-        NEUFLogService._preset_cache.clear()
 
     def normalize_filters(self, filters):
         """Normalize filters object — ensure arrays, remove empty values."""

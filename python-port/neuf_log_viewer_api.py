@@ -20,7 +20,7 @@ from typing import Any, Dict, List, Optional
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, PlainTextResponse, Response
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
 # ---------------------------------------------------------------------------
@@ -36,25 +36,6 @@ from src.neuf_log_service import NEUFLogService  # noqa: E402
 # ---------------------------------------------------------------------------
 # Request / response schemas
 # ---------------------------------------------------------------------------
-
-class FiltersBody(BaseModel):
-    logLevelInclude: Optional[List[str]] = None
-    logLevelExclude: Optional[List[str]] = None
-    filenameInclude: Optional[List[str]] = None
-    filenameExclude: Optional[List[str]] = None
-    threadInclude: Optional[List[str]] = None
-    threadExclude: Optional[List[str]] = None
-    deviceInclude: Optional[List[str]] = None
-    deviceExclude: Optional[List[str]] = None
-    componentInclude: Optional[List[str]] = None
-    componentExclude: Optional[List[str]] = None
-    timeFrom: Optional[str] = None
-    timeTo: Optional[str] = None
-    search: Optional[str] = None
-    contextLines: Optional[Any] = None
-    strictContext: Optional[Any] = None
-    preset: Optional[Any] = None
-
 
 class FilterLogRequest(BaseModel):
     filters: Optional[Dict[str, Any]] = None

@@ -230,7 +230,7 @@ def validate_options(command, opts):
                     f'❌ Unknown option: --{key}\n   Did you mean: --{suggestion}?'
                 )
             else:
-                valid_list = ', '.join(f'--{o}' for o in VALID_OPTIONS[:-1])
+                valid_list = ', '.join(f'--{o}' for o in VALID_OPTIONS)
                 errors.append(
                     f'❌ Unknown option: --{key}\n   Valid options: {valid_list}'
                 )

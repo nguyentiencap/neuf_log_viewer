@@ -1,7 +1,6 @@
 """
 Test Suite for Preset Service Module (Python port of test/preset.test.js)
 Tests all static methods of PresetService.
-All tests are intentionally failing at this stage — the skeleton raises NotImplementedError.
 """
 import sys
 import os
