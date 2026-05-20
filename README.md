@@ -43,6 +43,16 @@ The recommended workflow for LLM-assisted diagnosis is:
 npm install
 ```
 
+### Build Windows `.exe` (Python port)
+```bat
+cd python-port
+build_exe.bat
+```
+
+Output files:
+- `python-port/dist/neuf-log-viewer-cli.exe`
+- `python-port/dist/neuf-log-viewer-api.exe`
+
 ### Run the Web UI (API Server)
 ```bash
 npm start <path-to-log-folder>
