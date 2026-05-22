@@ -11,8 +11,13 @@
  *  5. Expand each rule recursively to its full primitive-token sequence for the dictionary.
  *
  * Dictionary export: each rule entry lists its fully-expanded primitive tokens so that,
- * for example, if r1→[a,b], r2→[r1,c], r3→[r1,d] then the final entries are
- * r2→key:[a,b,c] and r3→key:[a,b,d].
+ * for example, if the pair (a,b) is found in original messages 1-5 and the sub-pattern
+ * (key_1_5,c) is found in messages 1-3, then the entries are:
+ * key_1_5→[a,b], key_1_3→[a,b,c], key_4_5→[a,b,d].
+ *
+ * Rule ID format: key_{minLine}_{maxLine} where minLine/maxLine are the 1-based indices
+ * of the first and last original messages that contain the pattern.
+ * Collisions (same min/max) are disambiguated by appending _2, _3, …
  */
 
 'use strict';
@@ -74,32 +79,44 @@ class RePairGroupingService extends GroupingInterface {
    * Each sequence is modified in-place so the caller's copy reflects the
    * compressed form after the method returns.
    *
-   * @param {string[][]} sequences - Mutable token sequences
+   * Rule IDs use the format key_{minLine}_{maxLine} where minLine/maxLine are the
+   * 1-based indices of the first and last original messages containing the pattern.
+   * Collisions are disambiguated by appending _2, _3, …
+   *
+   * @param {string[][]} sequences - Mutable token sequences (index = original message index)
    * @param {number}     minCount  - Minimum pair frequency to create a rule
    * @param {number}     maxRules  - Maximum number of rules to generate
    * @returns {Object} rules map: ruleId → { left: string, right: string, count: number }
    */
   _runRePair(sequences, minCount, maxRules) {
     const rules = {};
-    let nextId = 1;
+    const usedIds = new Set();
 
     while (Object.keys(rules).length < maxRules) {
-      // --- Count all adjacent pairs across every sequence ---
-      const pairCounts = new Map();
-      for (const seq of sequences) {
+      // --- Count all adjacent pairs and track which original sequences contain them ---
+      const pairData = new Map(); // pairKey -> { count: number, indices: Set<number> }
+      for (let seqIdx = 0; seqIdx < sequences.length; seqIdx++) {
+        const seq = sequences[seqIdx];
         for (let i = 0; i < seq.length - 1; i++) {
-          const key = seq[i] + '\x00' + seq[i + 1];
-          pairCounts.set(key, (pairCounts.get(key) || 0) + 1);
+          const pairKey = seq[i] + '\x00' + seq[i + 1];
+          if (!pairData.has(pairKey)) {
+            pairData.set(pairKey, { count: 0, indices: new Set() });
+          }
+          const data = pairData.get(pairKey);
+          data.count++;
+          data.indices.add(seqIdx);
         }
       }
 
       // --- Find the most frequent pair ---
       let bestKey = null;
       let bestCount = 0;
-      for (const [key, count] of pairCounts) {
+      let bestIndices = null;
+      for (const [pairKey, { count, indices }] of pairData) {
         if (count > bestCount) {
           bestCount = count;
-          bestKey = key;
+          bestKey = pairKey;
+          bestIndices = indices;
         }
       }
 
@@ -108,7 +125,18 @@ class RePairGroupingService extends GroupingInterface {
       const sep = bestKey.indexOf('\x00');
       const left = bestKey.substring(0, sep);
       const right = bestKey.substring(sep + 1);
-      const ruleId = `r${nextId++}`;
+
+      // Build rule ID: key_{minLine}_{maxLine} (1-based original message indices)
+      const sortedIdx = [...bestIndices].sort((a, b) => a - b);
+      const minLine = sortedIdx[0] + 1;
+      const maxLine = sortedIdx[sortedIdx.length - 1] + 1;
+      const baseId = `key_${minLine}_${maxLine}`;
+      let ruleId = baseId;
+      let suffix = 2;
+      while (usedIds.has(ruleId)) {
+        ruleId = `${baseId}_${suffix++}`;
+      }
+      usedIds.add(ruleId);
       rules[ruleId] = { left, right, count: bestCount };
 
       // --- Replace all non-overlapping occurrences left-to-right ---

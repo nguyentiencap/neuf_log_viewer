@@ -77,14 +77,15 @@ describe('RePairGroupingService.group()', () => {
     expect(service.group(['a b', 'c d', 'e f'])).toEqual([]);
   });
 
-  test('Detects single repeated pair and assigns r1', () => {
+  test('Detects single repeated pair and uses key_minLine_maxLine format', () => {
+    // messages at 1-based lines 1, 2, 3 — pair (a,b) in all three → key_1_3
     const messages = ['a b c', 'a b d', 'a b e'];
     const result = service.group(messages);
     expect(result.length).toBeGreaterThan(0);
-    const r1 = result.find(e => e.id === 'r1');
-    expect(r1).toBeDefined();
-    expect(r1.key).toEqual(['a', 'b']);
-    expect(r1.count).toBe(3);
+    const entry = result.find(e => e.id === 'key_1_3');
+    expect(entry).toBeDefined();
+    expect(entry.key).toEqual(['a', 'b']);
+    expect(entry.count).toBe(3);
   });
 
   test('Result is sorted by count descending', () => {
@@ -98,11 +99,12 @@ describe('RePairGroupingService.group()', () => {
     }
   });
 
-  test('Each entry has id (string), key (array), count (number)', () => {
+  test('Each entry id uses key_minLine_maxLine format', () => {
     const messages = ['hello world', 'hello world', 'hello world'];
     const result = service.group(messages);
     expect(result.length).toBeGreaterThan(0);
     for (const entry of result) {
+      expect(entry.id).toMatch(/^key_\d+_\d+/);
       expect(typeof entry.id).toBe('string');
       expect(Array.isArray(entry.key)).toBe(true);
       expect(entry.key.length).toBeGreaterThan(0);
@@ -136,29 +138,31 @@ describe('RePairGroupingService.group()', () => {
 // RePairGroupingService.group – rule expansion (issue example)
 // ============================================================================
 describe('RePairGroupingService rule expansion', () => {
-  test('r1->ab, r2->r1c expands to [a,b,c]; r3->r1d expands to [a,b,d]', () => {
-    // (a,b) is most frequent (count=5), then (r1,c) count=3, then (r1,d) count=2
+  test('key_1_5 (a,b), key_1_3 (a,b,c), key_4_5 (a,b,d) — IDs from original line ranges', () => {
+    // messages (1-based lines):
+    //   1: 'a b c', 2: 'a b c', 3: 'a b c'  → (a,b) in lines 1-5, (key_1_5,c) in lines 1-3
+    //   4: 'a b d', 5: 'a b d'               → (key_1_5,d) in lines 4-5
     const messages = [
       'a b c', 'a b c', 'a b c',
       'a b d', 'a b d',
     ];
     const result = serviceDefault.group(messages, { minCount: 2 });
 
-    const r1 = result.find(e => e.id === 'r1');
-    const r2 = result.find(e => e.id === 'r2');
-    const r3 = result.find(e => e.id === 'r3');
+    const abRule = result.find(e => e.id === 'key_1_5');
+    const abcRule = result.find(e => e.id === 'key_1_3');
+    const abdRule = result.find(e => e.id === 'key_4_5');
 
-    expect(r1).toBeDefined();
-    expect(r1.key).toEqual(['a', 'b']);
-    expect(r1.count).toBe(5);
+    expect(abRule).toBeDefined();
+    expect(abRule.key).toEqual(['a', 'b']);
+    expect(abRule.count).toBe(5);
 
-    expect(r2).toBeDefined();
-    expect(r2.key).toEqual(['a', 'b', 'c']);
-    expect(r2.count).toBe(3);
+    expect(abcRule).toBeDefined();
+    expect(abcRule.key).toEqual(['a', 'b', 'c']);
+    expect(abcRule.count).toBe(3);
 
-    expect(r3).toBeDefined();
-    expect(r3.key).toEqual(['a', 'b', 'd']);
-    expect(r3.count).toBe(2);
+    expect(abdRule).toBeDefined();
+    expect(abdRule.key).toEqual(['a', 'b', 'd']);
+    expect(abdRule.count).toBe(2);
   });
 
   test('Deeper expansion: r3 uses two different sub-rules', () => {
@@ -270,7 +274,7 @@ describe('RePairGroupingService performance', () => {
       expect(result[i - 1].count).toBeGreaterThanOrEqual(result[i].count);
     }
     for (const entry of result) {
-      expect(typeof entry.id).toBe('string');
+      expect(entry.id).toMatch(/^key_\d+_\d+/);
       expect(Array.isArray(entry.key)).toBe(true);
       expect(entry.key.length).toBeGreaterThan(0);
       expect(typeof entry.count).toBe('number');
