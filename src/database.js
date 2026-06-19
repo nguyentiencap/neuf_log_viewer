@@ -9,79 +9,36 @@ const { logParserService } = require('./log-parser');
 
 /**
  * Database Wrapper Class
- * Provides a wrapper around sql.js database for easier operations
+ * Provides a thin wrapper around better-sqlite3 for consistent interface
  */
 class DatabaseWrapper {
   constructor(db) {
     this.db = db;
   }
-  
+
   exec(sql) {
-    this.db.run(sql);
+    this.db.exec(sql);
   }
-  
+
   prepare(sql) {
-    return {
-      run: (...params) => {
-        this.db.run(sql, params);
-      },
-      get: (...params) => {
-        const result = this.db.exec(sql, params);
-        if (result.length === 0) return null;
-        const columns = result[0].columns;
-        const values = result[0].values[0];
-        if (!values) return null;
-        const row = {};
-        columns.forEach((col, i) => row[col] = values[i]);
-        return row;
-      },
-      all: (...params) => {
-        const result = this.db.exec(sql, params);
-        if (result.length === 0) return [];
-        const columns = result[0].columns;
-        return result[0].values.map(values => {
-          const row = {};
-          columns.forEach((col, i) => row[col] = values[i]);
-          return row;
-        });
-      },
-      each: (callback, ...params) => {
-        const result = this.db.exec(sql, params);
-        if (result.length === 0) return;
-        const columns = result[0].columns;
-        result[0].values.forEach(values => {
-          const row = {};
-          columns.forEach((col, i) => row[col] = values[i]);
-          callback(row);
-        });
-      }
-    };
+    return this.db.prepare(sql);
   }
-  
+
   transaction(fn) {
-    return (items) => {
-      this.db.run('BEGIN TRANSACTION');
-      try {
-        fn(items);
-        this.db.run('COMMIT');
-      } catch (error) {
-        this.db.run('ROLLBACK');
-        throw error;
-      }
-    };
+    return this.db.transaction(fn);
   }
-  
+
   /**
-   * Register a custom SQL function on the underlying sql.js database
+   * Register a custom SQL function on the underlying better-sqlite3 database
    * @param {string} name - Function name
    * @param {Function} fn - Implementation function
    */
   registerFunction(name, fn) {
-    this.db.create_function(name, fn);
+    this.db.function(name, fn);
   }
 
-  export() {
-    return this.db.export();
+  close() {
+    this.db.close();
   }
 }
 

@@ -9,7 +9,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const initSqlJs = require('sql.js');
+const Database = require('better-sqlite3');
 const { DatabaseWrapper, DatabaseService } = require('./database');
 const { LogFileScannerService } = require('./log-file-scanner');
 const { PresetService } = require('./preset');
@@ -25,33 +25,6 @@ class NEUFLogService {
     this.logger = logger;
     // Internal scanner wraps parserService so all parsing goes through scannerService
     this.scannerService = new LogFileScannerService(logParserService, logger);
-  }
-
-  // -------- SQL.js lifecycle --------
-
-  /**
-   * Initialize SQL.js (backward compatible instance method)
-   * Delegates to static method for shared initialization
-   */
-  async initialize() {
-    return NEUFLogService.initializeSqlJs();
-  }
-
-  /**
-   * Initialize SQL.js (static, shared across all instances)
-   */
-  static async initializeSqlJs() {
-    if (!NEUFLogService._SQL) {
-      NEUFLogService._SQL = await initSqlJs();
-    }
-    return NEUFLogService._SQL;
-  }
-
-  /**
-   * Get SQL.js instance
-   */
-  async getSQL() {
-    return NEUFLogService.initializeSqlJs();
   }
 
   // -------- Path and cache helpers --------
@@ -144,11 +117,11 @@ class NEUFLogService {
 
   /**
    * Create database wrapper and service
-   * @param {Object} sqlDb - SQL.js database instance
+   * @param {Object} betterSqliteDb - better-sqlite3 database instance
    * @returns {Object} { db, databaseService }
    */
-  _createDatabaseService(sqlDb) {
-    const db = new DatabaseWrapper(sqlDb);
+  _createDatabaseService(betterSqliteDb) {
+    const db = new DatabaseWrapper(betterSqliteDb);
     // Pass only the getTimeBucket function (no need to bind since it doesn't use 'this')
     const databaseService = new DatabaseService(db, this.logger);
     // Always register custom SQL functions (needed for both scan and load paths)
@@ -175,11 +148,8 @@ class NEUFLogService {
       throw new Error('Database not found. Please scan logs first.');
     }
 
-    const SQL = await this.getSQL();
-    const buffer = fs.readFileSync(dbPath);
-    const sqlDb = new SQL.Database(buffer);
-
-    const { db, databaseService } = this._createDatabaseService(sqlDb);
+    const betterSqliteDb = new Database(dbPath);
+    const { db, databaseService } = this._createDatabaseService(betterSqliteDb);
 
     const cached = { db, databaseService, dbPath };
     NEUFLogService._dbCache[resolvedPath] = cached;
@@ -204,19 +174,6 @@ class NEUFLogService {
         filesScanned: 0
       }
     };
-  }
-
-
-  /**
-   * Persist SQL.js database to disk
-   * @param {Object} db - Database wrapper
-   * @param {string} dbDir - Database directory
-   * @param {string} dbPath - Database file path
-   */
-  _saveDatabaseToFile(db, dbDir, dbPath) {
-    const data = db.export();
-    fs.writeFileSync(dbPath, data);
-    this.logger(`💾 Database saved to ${dbPath}`);
   }
 
 
@@ -256,7 +213,7 @@ class NEUFLogService {
 
     this.logger('📊 Scanning and indexing logs...');
 
-    // Check for matching log files BEFORE initialising SQL.js to fail fast
+    // Check for matching log files before opening database to fail fast
     const logFiles = this.scannerService.findNeufLogFiles(logFolderPath);
     const filesScanned = logFiles.length;
 
@@ -268,9 +225,13 @@ class NEUFLogService {
       );
     }
 
-    const SQL = await this.getSQL();
-    const sqlDb = new SQL.Database();
-    const { db, databaseService } = this._createDatabaseService(sqlDb);
+    if (!fs.existsSync(dbDir)) {
+      fs.mkdirSync(dbDir, { recursive: true });
+    }
+
+    // Create a new database file directly (better-sqlite3 writes to disk natively)
+    const betterSqliteDb = new Database(dbPath);
+    const { db, databaseService } = this._createDatabaseService(betterSqliteDb);
 
     const scannerService = this.scannerService;
 
@@ -285,6 +246,7 @@ class NEUFLogService {
     const fileStats = parseResult.fileStats || [];
 
     if (totalLogs === 0) {
+      db.close();
       this._invalidateFolderCaches(folderPath);
       if (fs.existsSync(dbPath)) {
         fs.unlinkSync(dbPath);
@@ -310,17 +272,15 @@ class NEUFLogService {
     databaseService.dropTempLogsTable();
     this.logger(`✅ Inserted ${totalLogs.toLocaleString()} entries into logs table.`);
 
-    if (!fs.existsSync(dbDir)) {
-      fs.mkdirSync(dbDir, { recursive: true });
-    }
-
-    // Generate and save preset snapshot before export (UDFs still registered on scan-time connection)
+    // Generate and save preset snapshot (UDFs still registered on scan-time connection)
     const presetsPath = PresetService.getPresetsPath(dbDir);
     const presets = this._generateInstallPresets(databaseService);
     this.logger(presets);
     PresetService.savePreset(presetsPath, presets, this.logger);
 
-    this._saveDatabaseToFile(db, dbDir, dbPath);
+    // Close scan-time connection; loadDatabase will reopen for queries
+    db.close();
+    this.logger(`💾 Database saved to ${dbPath}`);
 
     return {
       success: true,
@@ -579,8 +539,7 @@ class NEUFLogService {
   }
 }
 
-// Static properties for shared SQL.js instance and DB cache
-NEUFLogService._SQL = null;
+// Static properties for DB cache
 NEUFLogService._dbCache = {};
 NEUFLogService._presetCache = new Map();
 
